@@ -88,17 +88,5 @@ class CRCDataset(Dataset):
                     'node_0': mask_slice_5,
                     'fat_0': mask_slice_6}
         
-        mask_segments = self.extract_and_store_mask_segments_3d(masks_dict)
         self.images = img
-        return img, mask, masks_dict, masks_slice_dict, mask_segments
-
-
-    def extract_and_store_mask_segments_3d(self, masks_dict):
-        mask_segments = {}
-        for key in masks_dict.keys():
-            mask = masks_dict[key]
-            labeled_mask, num_objects = ndimage.label(mask)
-            for j in range(1, num_objects + 1):
-                object_mask = labeled_mask == j
-                mask_segments[key + '_' + str(j)] = object_mask
-        return mask_segments
+        return img, mask, masks_dict, masks_slice_dict
