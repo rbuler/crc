@@ -15,9 +15,9 @@ class CRCDataset(Dataset):
         for root, dirs, files in os.walk(self.root, topdown=False):
             for name in files:
                 f = os.path.join(root, name)
-                if '-labels.nii.gz' in f:
+                if 'labels.nii.gz' in f:
                     self.masks_path.append(f)
-                elif ')nii.gz' in f:
+                elif 'nii.gz' in f:
                     self.images_path.append(f)
 
     def __len__(self):
@@ -33,8 +33,6 @@ class CRCDataset(Dataset):
         mask = np.asarray(nib.load(mask_path).dataobj)
         mask = torch.from_numpy(mask)
         
-        print(img.shape, mask.shape)
-        print(image_path, mask_path)
         if len(img.shape) == 3:
             h, w, s = img.shape
         elif len(img.shape) == 4:

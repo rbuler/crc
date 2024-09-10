@@ -32,8 +32,8 @@ label = "colon_0"
 mask_images = masks_dict[label][masks_slice_dict[label]]
 absolute_slice = masks_slice_dict[label]
 
-# try:
-#     view_slices(img, mask_images, title='3D Mask Slices', absolute_slice=absolute_slice)
-# except Exception as e:
-#     print(f'No {label} mask in this sample')
+try:
+    view_slices(img, mask_images, title='3D Mask Slices', absolute_slice=absolute_slice)
+except Exception as e:
+    print(f'No {label} mask in this sample')
 # %%
