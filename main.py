@@ -1,14 +1,10 @@
 import os
 import torch
 import numpy as np
-
-import nibabel as nib
-from scipy import ndimage
 from scipy.ndimage import rotate
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from ipywidgets import interact, IntSlider
-from torch.utils.data import Dataset
 from dataset import CRCDataset
 
 
