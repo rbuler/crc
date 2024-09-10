@@ -24,9 +24,12 @@ root = '/media/dysk_a/jr_buler/RJG-gumed/RJG-6_labels_version'
 dataset = CRCDataset(root)
 img, mask, masks_dict, masks_slice_dict = dataset[sample_idx]
 
-mask_images = masks_dict['colon_0'][masks_slice_dict['colon_0']]
-absolute_slice = masks_slice_dict['colon_0']
+label = "colon_0"
+mask_images = masks_dict[label][masks_slice_dict[label]]
+absolute_slice = masks_slice_dict[label]
 
-
-view_slices(mask_images, title='3D Mask Slices', absolute_slice=absolute_slice)
+try:
+    view_slices(mask_images, title='3D Mask Slices', absolute_slice=absolute_slice)
+except Exception as e:
+    print(f'No {label} mask in this sample')
 # %%
