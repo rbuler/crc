@@ -1,13 +1,13 @@
 name: crc
 channels:
-  - conda-forge
   - pytorch
   - nvidia
+  - conda-forge
   - radiomics
   - defaults
 dependencies:
-  - _libgcc_mutex=0.1=main
-  - _openmp_mutex=5.1=1_gnu
+  - _libgcc_mutex=0.1=conda_forge
+  - _openmp_mutex=4.5=2_gnu
   - asttokens=2.0.5=pyhd3eb1b0_0
   - backcall=0.2.0=pyhd3eb1b0_0
   - blas=1.0=mkl
@@ -19,6 +19,7 @@ dependencies:
   - certifi=2024.8.30=py38h06a4308_0
   - charset-normalizer=3.3.2=pyhd3eb1b0_0
   - comm=0.2.1=py38h06a4308_0
+  - connected-components-3d=3.17.0=py38h3135665_0
   - contourpy=1.0.5=py38hdb19cb5_0
   - cuda-cudart=12.4.127=0
   - cuda-cupti=12.4.127=0
@@ -77,11 +78,12 @@ dependencies:
   - libdeflate=1.17=h5eee18b_1
   - libedit=3.1.20230828=h5eee18b_0
   - libffi=3.4.4=h6a678d5_1
-  - libgcc-ng=11.2.0=h1234567_1
+  - libgcc=14.1.0=h77fa898_1
+  - libgcc-ng=14.1.0=h69a702a_1
   - libgfortran-ng=11.2.0=h00389a5_1
   - libgfortran5=11.2.0=h1234567_1
   - libglib=2.78.4=hdc74915_0
-  - libgomp=11.2.0=h1234567_1
+  - libgomp=14.1.0=h77fa898_1
   - libiconv=1.16=h5eee18b_3
   - libidn2=2.3.4=h5eee18b_0
   - libjpeg-turbo=2.0.0=h9bf148f_0
@@ -92,7 +94,8 @@ dependencies:
   - libnvjpeg=12.3.1.89=0
   - libpng=1.6.39=h5eee18b_0
   - libpq=12.17=hdbd6064_0
-  - libstdcxx-ng=11.2.0=h1234567_1
+  - libstdcxx=14.1.0=hc0a3c3a_1
+  - libstdcxx-ng=14.1.0=h4852527_1
   - libtasn1=4.19.0=h5eee18b_0
   - libtiff=4.5.1=h6a678d5_0
   - libunistring=0.9.10=h27cfd23_0
@@ -145,6 +148,7 @@ dependencies:
   - pysocks=1.7.1=py38h06a4308_0
   - python=3.8.19=h955ad1f_0
   - python-dateutil=2.9.0post0=py38h06a4308_2
+  - python_abi=3.8=2_cp38
   - pytorch=2.4.1=py3.8_cuda12.4_cudnn9.1.0_0
   - pytorch-cuda=12.4=hc786d27_6
   - pytorch-mutex=1.0=cuda
