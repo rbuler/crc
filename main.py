@@ -21,7 +21,7 @@ sample_idx = 1
 root = '/media/dysk_a/jr_buler/RJG-gumed/RJG-6_labels_version'
 dataset = CRCDataset(root, save_new_masks=False)
 
-img, mask, instance_mask, mapping = dataset[sample_idx]
+img, mask, instance_mask, mapped_masks = dataset[sample_idx]
 
 # try:
 #     view_slices(img, mask, title='3D Mask Slices')
