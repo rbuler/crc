@@ -3,10 +3,11 @@ import cc3d
 import numpy as np
 from utils import find_unique_value_mapping
 import nibabel as nib
+import pickle
 
 def create_instance_level_mask(mask_path, connectivity=26, save_dir=None,
                                remove_dust=True, threshold=100,
-                               verbose=True) -> dict:
+                               verbose=True) -> None:
     """
     Create an instance-level mask from a given class mask.
     Args:
@@ -17,13 +18,13 @@ def create_instance_level_mask(mask_path, connectivity=26, save_dir=None,
         threshold: The threshold used for dust removal. Default is 100.
         verbose: Whether to print verbose information during the process. Default is True.
     Returns:
-        A dictionary containing the mapping between class labels and instance labels.
+        None
     """
     
     #  only 4,8 (2D) and 26, 18, and 6 (3D) are allowed
 
     if verbose:
-        print(f"\n----------------------------\n")
+        print("\n----------------------------\n")
     labels_in = np.asarray(nib.load(mask_path).dataobj)
     if len(labels_in.shape) == 4:
         labels_in = np.squeeze(labels_in)
@@ -43,16 +44,19 @@ def create_instance_level_mask(mask_path, connectivity=26, save_dir=None,
 
     if save_dir is not None:
         labels_out = nib.Nifti1Image(labels_out, affine=np.eye(4))
-        save_dir = save_dir.split('.')[0] + "_instance_mask.nii.gz"
-        nib.save(labels_out, save_dir)
+        instance_mask_path = save_dir.split('.')[0] + "_instance_mask.nii.gz"
+        nib.save(labels_out, instance_mask_path)
+        mapping_path = save_dir.split('.')[0] + "_mapping.pkl"
+        with open(mapping_path, 'wb') as f:
+            pickle.dump(mapping, f)
         if verbose:
             for k, v in mapping.items():
                 print(f"{k:20}:\t{v['class_label']} -> {v['instance_labels']}")
-            print(f"Instance mask saved as {save_dir}.")
+            print(f"Instance mask saved as {instance_mask_path}.")
+            print(f"Mapping saved as {mapping_path}.")
     else:
         if verbose:
-            print(f"Instance mask not saved. Mapping created:")
+            print("Instance mask not saved. Mapping created:")
             for k, v in mapping.items():
                 print(f"{k:20}:\t{v['class_label']} -> {v['instance_labels']}")
-
-    return mapping
+    return
