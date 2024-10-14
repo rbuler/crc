@@ -4,10 +4,10 @@ import numpy as np
 import nibabel as nib
 from scipy import ndimage
 from torch.utils.data import Dataset
-
+from connected_components import create_instance_level_mask
 
 class CRCDataset(Dataset):
-    def __init__(self, root, transform=None):
+    def __init__(self, root, transform=None, save_new_masks=True):
         self.root = root
         self.images_path = []
         self.masks_path = []
@@ -17,6 +17,9 @@ class CRCDataset(Dataset):
                 f = os.path.join(root, name)
                 if 'labels.nii.gz' in f:
                     self.masks_path.append(f)
+                    save_dir = None if not save_new_masks else f
+                    mapping = create_instance_level_mask(f, save_dir=save_dir)
+                    print(mapping)
                 elif 'nii.gz' in f:
                     self.images_path.append(f)
 
