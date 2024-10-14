@@ -12,7 +12,7 @@ def find_unique_value_mapping(mask1, mask2) -> dict:
     dict: A dictionary mapping unique values from mask1 to corresponding values in mask2.
     """
     if mask1.shape != mask2.shape:
-        raise ValueError("Masks have different shapes.")
+        raise ValueError("Masks should have the same shapes.")
 
     unique_values_mask1 = np.unique(mask1[mask1 != 0])
 
