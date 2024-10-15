@@ -1,3 +1,8 @@
+import torch
+import numpy as np
+import yaml
+import logging
+import utils
 import matplotlib.pyplot as plt
 from ipywidgets import interact, IntSlider
 from dataset import CRCDataset
@@ -16,10 +21,31 @@ def view_slices(image, stack, cmap='gray', title=''):
         plt.show()
 
 
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+logger_radiomics = logging.getLogger("radiomics")
+logger_radiomics.setLevel(logging.ERROR)
+
+# MAKE PARSER AND LOAD PARAMS FROM CONFIG FILE--------------------------------
+parser = utils.get_args_parser('config.yml')
+args, unknown = parser.parse_known_args()
+with open(args.config_path) as file:
+    config = yaml.load(file, Loader=yaml.FullLoader)
+
+# SET FIXED SEED FOR REPRODUCIBILITY --------------------------------
+seed = config['seed']
+np.random.seed(seed)
+torch.manual_seed(seed)
+torch.cuda.manual_seed(seed)
 # %%
 sample_idx = 1
 root = '/media/dysk_a/jr_buler/RJG-gumed/RJG-6_labels_version'
-dataset = CRCDataset(root, save_new_masks=False)
+dataset = CRCDataset(root,
+                     load_instance_masks=True,
+                     extract_radiomics=False,
+                     save_radiomics=False)
 
 # mapped masks are the instance masks with the same shape as the original mask
 # but with the same values as the original mask, not the instance labels
