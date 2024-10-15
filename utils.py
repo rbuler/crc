@@ -1,4 +1,8 @@
+import os
+import typing
+import argparse
 import numpy as np
+
 
 def find_unique_value_mapping(mask1, mask2) -> dict:
     """
@@ -51,3 +55,14 @@ def pretty_dict_str(d, key_only=False):
             pretty_dict += f'\n\t{k}:\t{v}'
         #return result
     return pretty_dict
+
+
+def get_args_parser(path: typing.Union[str, bytes, os.PathLike]):
+    help = '''path to .yml config file
+    specyfying datasets/training params'''
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config_path", type=str,
+                        default=path,
+                        help=help)
+    return parser

@@ -54,12 +54,21 @@ class RadiomicsExtractor():
         im = d['image']
         sg = d['segmentation']
         lb = d['label']
-
         im = np.asarray(nib.load(im).dataobj)
         sg = np.asarray(nib.load(sg).dataobj)
+
+        if len(im.shape) == 3:
+            _, _, _ = im.shape
+        elif len(im.shape) == 4: 
+            im = im[:, :, 0, :]
+
+        if len(sg.shape) == 3:
+            _, _, _ = sg.shape
+        elif len(sg.shape) == 4:
+            sg = sg[:, :, 0, :]
+
         im = sitk.GetImageFromArray(im)
         sg = sitk.GetImageFromArray(sg)
-
         features = self.extractor.execute(im, sg, label=lb)
         return features
     

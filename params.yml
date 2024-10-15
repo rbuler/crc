@@ -53,7 +53,7 @@ setting: #----------------------------------------------------------------------
   # resegmentShape:           # [False]: Boolean, if set to True, the resegmented mask is also used for shape calculation. If set to False (default), only first order and texture classes are calculated using the resegmented mask (known in IBSI as the intensity mask).
 
 # Mask validation
-  minimumROIDimensions: 3     # [2]: Integer, range 1-3, specifies the minimum dimensions (1D, 2D or 3D, respectively). Single-voxel segmentations are always excluded.
+  # minimumROIDimensions: 3     # [2]: Integer, range 1-3, specifies the minimum dimensions (1D, 2D or 3D, respectively). Single-voxel segmentations are always excluded.
   # minimumROISize:           # [None] Integer, > 0, specifies the minimum number of voxels required. Test is skipped if this parameter is omitted (specifying it as None in the parameter file will throw an error).
   # geometryTolerance:        # [None]: Float, determines the tolarance used by SimpleITK to compare origin, direction and spacing between image and mask. Affects the fist step in checkMask(). If set to None, PyRadiomics will use SimpleITK default (1e-16).
   # correctMask:              # [False]: Boolean, if set to true, PyRadiomics will attempt to resample the mask to the image geometry when the first step in checkMask() fails. This uses a nearest neighbor interpolator. Mask check will still fail if the ROI defined in the mask includes areas outside of the image physical space.
@@ -97,7 +97,7 @@ setting: #----------------------------------------------------------------------
   # binCount:               # [None]: integer, > 0, specifies the number of bins to create. The width of the bin is then determined by the range in the ROI. No definitive evidence is available on which method of discretization is superior, we advise a fixed bin width.
 
 # Forced 2D extraction
-  force2D: False                # [False]: Boolean, set to true to force a by slice texture calculation. Dimension that identifies the ‘slice’ can be defined in force2Ddimension. If input ROI is already a 2D ROI, features are automatically extracted in 2D.
+  # force2D: False                # [False]: Boolean, set to true to force a by slice texture calculation. Dimension that identifies the ‘slice’ can be defined in force2Ddimension. If input ROI is already a 2D ROI, features are automatically extracted in 2D.
   # force2Ddimension:       # [0]: int, range 0-2. Specifies the ‘slice’ dimension for a by-slice feature extraction. A value of 0 represents the native acquisition plane for the images (usually axial for CT and axial, coronal or sagittal for MRI). Similarly, 1 identifies the out-of plane y dimension (e.g. coronal plane for an axial image) and 2 the out-of-plane x dimension (e.g. sagittal plane for an acial image). if force2D is set to False, this parameter has no effect.
 
 # Texture matrix weighting
@@ -160,7 +160,7 @@ featureClass: #-----------------------------------------------------------------
 # (e.g. the First Order feature defined by get10PercentileFeatureValue() is enabled by specifying firstorder: ['10Percentile']  ).
 
 
-  firstorder: []  # First Order Statistics (19 features   [18 default + STD excluded cuz correlated with VAR])
+  # firstorder: []  # First Order Statistics (19 features   [18 default + STD excluded cuz correlated with VAR])
   # shape2D: []     # Shape-based (2D) (10 features default [ 9 default +  Spherical Disproportion excluded cuz correlated with Sphericity])
   shape: []       # Shape-based (3D) (16 features)
   # glcm:  []       # Gray Level Co-occurrence Matrix (24 features)

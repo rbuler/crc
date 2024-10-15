@@ -1,7 +1,12 @@
 seed: 42
 device: 'cuda:0'
 
+dir:
+  inf: '/media/dysk_a/jr_buler/RJG-gumed/radiomics_info.pkl'
+  radiomics: '/media/dysk_a/jr_buler/RJG-gumed/radiomics_features.pkl'
+
 radiomics:
-  extract: False # True, False, if False load from pkl
+  extract: True # True, False, if False load from pkl
   mode: 'parallel' #serial, parallel
-  save: False # True, False
+  n_processes: 8  # for parallel mode only
+  save: True # True, False
