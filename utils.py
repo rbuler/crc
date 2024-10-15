@@ -31,5 +31,23 @@ def find_unique_value_mapping(mask1, mask2) -> dict:
             v["instance_labels"] = list(np.unique(mask2[mask1 == v["class_label"]]))
             v["instance_labels"] = [x for x in v["instance_labels"] if x != 0]
 
-
     return class_mapping
+
+
+def pretty_dict_str(d, key_only=False):
+    #take empty string
+    sorted_list = sorted(d.items())
+    sorted_dict = {}
+    for key, value in sorted_list:
+        sorted_dict[key] = value
+    pretty_dict = ''  
+     
+    #get items for dict
+    if key_only:
+        for k, _ in sorted_dict.items():
+            pretty_dict += f'\n\t{k}'
+    else:
+        for k, v in sorted_dict.items():
+            pretty_dict += f'\n\t{k}:\t{v}'
+        #return result
+    return pretty_dict
