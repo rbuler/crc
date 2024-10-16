@@ -72,6 +72,14 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
                 'segmentation': instance_mask,
                 'instance_to_class': instance_to_class,
                 'patient_id': patient_id
+                
+                # TODO
+                #  
+                # ADD FEATURE FOR EXTRACTING FEATURES with SPECIFIC INSTANCE LABELS
+                # SO THAT THERE IS NO NEED TO EXTRACT FEATURES FOR ALL INSTANCES
+                # if instance_label in instance_labels_to_be_analysed_:
+                #
+            
             }
             list_of_dicts.append(d)
     transform = None

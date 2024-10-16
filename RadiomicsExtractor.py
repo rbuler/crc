@@ -75,6 +75,12 @@ class RadiomicsExtractor():
 
         all_features = []
         for instance_label, class_label in instance_to_class.values():
+
+            # TODO 
+            # ADD FEATURE FOR EXTRACTING FEATURES with SPECIFIC INSTANCE LABELS
+            # SO THAT THERE IS NO NEED TO EXTRACT FEATURES FOR ALL INSTANCES
+            # if instance_label (not) in [1, 2, 3, 4, 5]:
+
             features = self.extractor.execute(image, segmentation, label=instance_label)
             features['class_label'] = class_label
             features['patient_id'] = patient_id
