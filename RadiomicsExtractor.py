@@ -51,25 +51,33 @@ class RadiomicsExtractor():
         return list(self.extractor.enabledFeatures.keys())
 
     def extract_radiomics(self, d:dict):
-        im = d['image']
-        sg = d['segmentation']
-        lb = d['label']
-        im = np.asarray(nib.load(im).dataobj)
-        sg = np.asarray(nib.load(sg).dataobj)
+        image = d['image']
+        segmentation = d['segmentation']
+        instance_label = d['label']
+        class_label = d['class_label']
+        patient_id = d['patient_id']
 
-        if len(im.shape) == 3:
-            _, _, _ = im.shape
-        elif len(im.shape) == 4: 
-            im = im[:, :, 0, :]
 
-        if len(sg.shape) == 3:
-            _, _, _ = sg.shape
-        elif len(sg.shape) == 4:
-            sg = sg[:, :, 0, :]
 
-        im = sitk.GetImageFromArray(im)
-        sg = sitk.GetImageFromArray(sg)
-        features = self.extractor.execute(im, sg, label=lb)
+        image = np.asarray(nib.load(image).dataobj)
+        segmentation = np.asarray(nib.load(segmentation).dataobj)
+
+        if len(image.shape) == 3:
+            _, _, _ = image.shape
+        elif len(image.shape) == 4: 
+            image = image[:, :, 0, :]
+
+        if len(segmentation.shape) == 3:
+            _, _, _ = segmentation.shape
+        elif len(segmentation.shape) == 4:
+            segmentation = segmentation[:, :, 0, :]
+
+        image = sitk.GetImageFromArray(image)
+        segmentation = sitk.GetImageFromArray(segmentation)
+        features = self.extractor.execute(image, segmentation, label=instance_label)
+        features['class_label'] = class_label
+        features['patient_id'] = patient_id
+
         return features
     
 

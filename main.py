@@ -42,14 +42,12 @@ torch.cuda.manual_seed(seed)
 # %%
 sample_idx = 1
 root = '/media/dysk_a/jr_buler/RJG-gumed/RJG-6_labels_version'
-dataset = CRCDataset(root,
-                     load_instance_masks=True,
-                     extract_radiomics=False,
-                     save_radiomics=False)
+dataset = CRCDataset(root, transform=None,
+                     save_new_masks=False)
 
 # mapped masks are the instance masks with the same shape as the original mask
 # but with the same values as the original mask, not the instance labels
-img, mask, instance_mask, mapped_masks = dataset[sample_idx]
+# img, mask, instance_mask, radiomics = dataset[sample_idx]
 
 
 # %%

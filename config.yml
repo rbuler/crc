@@ -3,10 +3,10 @@ device: 'cuda:0'
 
 dir:
   inf: '/media/dysk_a/jr_buler/RJG-gumed/radiomics_info.pkl'
-  radiomics: '/media/dysk_a/jr_buler/RJG-gumed/radiomics_features.pkl'
+  pkl_radiomics: '/media/dysk_a/jr_buler/RJG-gumed/radiomics_features.pkl'
 
 radiomics:
-  extract: True # True, False, if False load from pkl
+  action: 'extract' # 'extract' to extract radiomics, 'load' to load from pkl
   mode: 'parallel' #serial, parallel
-  n_processes: 8  # for parallel mode only
+  n_processes: None  # for parallel mode only; if None, use [(all available) - 1] cores
   save: True # True, False
