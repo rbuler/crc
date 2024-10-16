@@ -53,7 +53,7 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
     
     list_of_dicts = []
 
-    for img, mask, instance_mask, mapping_p in zip(images_path, masks_path, instance_masks_path, mapping_path):
+    for img, _, instance_mask, mapping_p in zip(images_path, masks_path, instance_masks_path, mapping_path):
         patient_id = os.path.basename(img).split('_')[0].split(' ')[0]
     
         mapping = {}
@@ -67,18 +67,14 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
                     for instance_label in info['instance_labels']:
                         instance_to_class[instance_counter] = (instance_label, info['class_label'])
                         instance_counter += 1
-            for instance_label, class_label in instance_to_class.values():
-                d = {
-                    'image': img,
-                    'segmentation': instance_mask,
-                    'label': instance_label,
-                    'class_label': class_label,
-                    'patient_id': patient_id
-                }
-                list_of_dicts.append(d)
-
+            d = {
+                'image': img,
+                'segmentation': instance_mask,
+                'instance_to_class': instance_to_class,
+                'patient_id': patient_id
+            }
+            list_of_dicts.append(d)
     transform = None
-    list_of_dicts = list_of_dicts[:10] ####################TEMPORARY####################################
     
     radiomics_extractor = RadiomicsExtractor('params.yml')
 

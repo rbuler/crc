@@ -143,7 +143,7 @@ imageType: #--------------------------------------------------------------------
   # Exponential: {}       # Takes the the exponential, where filtered intensity is e^(absolute intensity).
   # Gradient: {}          # Returns the magnitude of the local gradient.
   # LBP2D: {}             # Computes the Local Binary Pattern in a by-slice operation (2D).
-  LBP3D: {}             # Computes the Local Binary Pattern in 3D using spherical harmonics.
+  # LBP3D: {}             # Computes the Local Binary Pattern in 3D using spherical harmonics.
 
 
 
@@ -161,10 +161,10 @@ featureClass: #-----------------------------------------------------------------
 
 
   firstorder: []  # First Order Statistics (19 features   [18 default + STD excluded cuz correlated with VAR])
-  shape2D: []     # Shape-based (2D) (10 features default [ 9 default +  Spherical Disproportion excluded cuz correlated with Sphericity])
-  shape: []       # Shape-based (3D) (16 features)
-  glcm:  []       # Gray Level Co-occurrence Matrix (24 features)
-  gldm: []        # Gray Level Dependence Matrix (14 features)
-  glrlm: []       # Gray Level Run Length Matrix (16 features)
-  glszm: []       # Gray Level Size Zone Matrix (16 features)
-  ngtdm: []       # Neighbouring Gray Tone Difference Matrix (5 features)
+  # shape2D: []     # Shape-based (2D) (10 features default [ 9 default +  Spherical Disproportion excluded cuz correlated with Sphericity])
+  # shape: []       # Shape-based (3D) (16 features)
+  # glcm:  []       # Gray Level Co-occurrence Matrix (24 features)
+  # gldm: []        # Gray Level Dependence Matrix (14 features)
+  # glrlm: []       # Gray Level Run Length Matrix (16 features)
+  # glszm: []       # Gray Level Size Zone Matrix (16 features)
+  # ngtdm: []       # Neighbouring Gray Tone Difference Matrix (5 features)

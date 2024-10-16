@@ -53,10 +53,8 @@ class RadiomicsExtractor():
     def extract_radiomics(self, d:dict):
         image = d['image']
         segmentation = d['segmentation']
-        instance_label = d['label']
-        class_label = d['class_label']
+        instance_to_class = d['instance_to_class']
         patient_id = d['patient_id']
-
 
 
         image = np.asarray(nib.load(image).dataobj)
@@ -74,11 +72,15 @@ class RadiomicsExtractor():
 
         image = sitk.GetImageFromArray(image)
         segmentation = sitk.GetImageFromArray(segmentation)
-        features = self.extractor.execute(image, segmentation, label=instance_label)
-        features['class_label'] = class_label
-        features['patient_id'] = patient_id
 
-        return features
+        all_features = []
+        for instance_label, class_label in instance_to_class.values():
+            features = self.extractor.execute(image, segmentation, label=instance_label)
+            features['class_label'] = class_label
+            features['patient_id'] = patient_id
+            all_features.append(features)
+
+        return all_features
     
 
     def parallell_extraction(self, list_of_dicts: list, n_processes = None):
