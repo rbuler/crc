@@ -39,13 +39,15 @@ def get_radiomics(images_path, masks_path, instance_masks_path, mapping_path):
         with open(config['dir']['pkl_radiomics'], 'rb') as f:
             radiomics = pickle.load(f)
         logger.info(f"Loaded radiomics features from {config['dir']['pkl_radiomics']}")
-    
-        if isinstance(radiomics, list) and all(isinstance(d, dict) for d in radiomics):
-            radiomics = pd.DataFrame(radiomics)
-            columns = radiomics.columns.tolist()
-            reordered_columns = columns[-2:] + columns[:-2]
-            radiomics = radiomics[reordered_columns]
-    
+        
+        if isinstance(radiomics, list) and all(isinstance(sublist, list) for sublist in radiomics):
+            radiomics = [item for sublist in radiomics for item in sublist]
+            if all(isinstance(d, dict) for d in radiomics):
+                radiomics = pd.DataFrame(radiomics)
+                columns = radiomics.columns.tolist()
+                reordered_columns = columns[-2:] + columns[:-2]
+                radiomics = radiomics[reordered_columns]
+
     return radiomics
 
 
@@ -83,7 +85,7 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
             }
             list_of_dicts.append(d)
     transform = None
-    
+    list_of_dicts = list_of_dicts[:10]
     radiomics_extractor = RadiomicsExtractor('params.yml')
 
     if config['radiomics']['mode'] in ['serial', 'parallel']:
@@ -109,11 +111,13 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
                 file.write('\n\nTransforms:\n' + str(transform))
                 logger.info(f"Saved extraction details in {config['dir']['inf']}")
 
-        if isinstance(results, list) and all(isinstance(d, dict) for d in results):
-            results = pd.DataFrame(results)
-            columns = results.columns.tolist()
-            reordered_columns = columns[-2:] + columns[:-2]
-            results = results[reordered_columns]
+        if isinstance(results, list) and all(isinstance(sublist, list) for sublist in results):
+            radiomics = [item for sublist in results for item in sublist]
+            if all(isinstance(d, dict) for d in radiomics):
+                radiomics = pd.DataFrame(radiomics)
+                columns = radiomics.columns.tolist()
+                reordered_columns = columns[-2:] + columns[:-2]
+                results = radiomics[reordered_columns]
         
     elif config['radiomics']['mode'] not in ['parallel', 'serial']:
         raise ValueError('Invalid radiomics extraction mode')
