@@ -6,6 +6,7 @@ import utils
 import matplotlib.pyplot as plt
 from ipywidgets import interact, IntSlider
 from dataset import CRCDataset
+from reduce_dim_features import reduce_dim
 
 
 def view_slices(image, stack, cmap='gray', title=''):    
@@ -45,8 +46,9 @@ root = '/media/dysk_a/jr_buler/RJG-gumed/RJG-6_labels_version'
 dataset = CRCDataset(root, transform=None,
                      save_new_masks=False)
 
-img, mask, instance_mask, radiomics = dataset[sample_idx]
-
+# img, mask, instance_mask, radiomics = dataset[sample_idx]
+# %%
+reduce_dim(dataset, comparison_type='all') # 'colon', 'node', 'fat', 'all'
 
 # %%
 # try:
