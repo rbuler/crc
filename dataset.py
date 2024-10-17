@@ -45,7 +45,8 @@ class CRCDataset(Dataset):
     
 
     def get_patient_id(self, idx):
-        return os.path.basename(self.images_path[idx]).split('_')[0].split(' ')[0]
+        patient_id = os.path.basename(self.images_path[idx]).split('_')[0].split(' ')[0]
+        return ''.join(filter(str.isdigit, patient_id))
 
 
     def __getitem__(self, idx):
