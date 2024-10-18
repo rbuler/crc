@@ -4,6 +4,7 @@ import numpy as np
 import nibabel as nib
 import SimpleITK as sitk
 import multiprocessing
+from pyinstrument import Profiler
 # import SimpleITK as sitk
 from multiprocessing import Pool
 from tqdm import trange
@@ -51,36 +52,33 @@ class RadiomicsExtractor():
         return list(self.extractor.enabledFeatures.keys())
 
     def extract_radiomics(self, d:dict):
+        profiler1 = Profiler()
+        profiler1.start()
+
         image = d['image']
         segmentation = d['segmentation']
         class_label = d['class_label']
         instance_label = d['instance_label']
         patient_id = d['patient_id']
 
-        logger.info(f"Extracting radiomics features for instance={instance_label} of id={patient_id}")
 
         image = np.asarray(nib.load(image).dataobj)
-        segmentation = np.asarray(nib.load(segmentation).dataobj)
-
-        if len(image.shape) == 3:
-            _, _, _ = image.shape
-        elif len(image.shape) == 4: 
-            image = image[:, :, 0, :]
-
-        if len(segmentation.shape) == 3:
-            _, _, _ = segmentation.shape
-        elif len(segmentation.shape) == 4:
-            segmentation = segmentation[:, :, 0, :]
-
+        image = np.squeeze(image) if len(image.shape) == 4 else image
         image = sitk.GetImageFromArray(image)
+        segmentation = np.asarray(nib.load(segmentation).dataobj)
+        segmentation = np.squeeze(segmentation) if len(segmentation.shape) == 4 else segmentation
         segmentation = sitk.GetImageFromArray(segmentation)
 
+        logger.info(f"Extracting radiomics features for class={class_label} & instance={instance_label} of id={patient_id}")
+        
         features = self.extractor.execute(image, segmentation, label=instance_label)
+        profiler1.stop()
         features['class_label'] = class_label
         features['instance_label'] = instance_label
         features['patient_id'] = patient_id
-        logger.info(f"Extraction FINISHED for instance={instance_label} of id={patient_id}")
-
+        
+        logger.info(f"Profiler OUTPUT{profiler1.output_text(unicode=True, color=True)}")
+        logger.info(f"Extraction FINISHED for class={class_label} & instance={instance_label} of id={patient_id}")
         return features
     
 

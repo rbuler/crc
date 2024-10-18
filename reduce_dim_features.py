@@ -39,7 +39,7 @@ def reduce_dim(df, comparison_type):
 
     # 2D PCA Plot
     plt.figure(figsize=(10, 8))
-    sns.scatterplot(data=pca_df, x='PC1', y='PC2', hue='class_label', palette='viridis', s=100)
+    sns.scatterplot(data=pca_df, x='PC1', y='PC2', hue='class_label', s=100)
     plt.title('PCA of Radiomic Features by Class Label', fontsize=16, weight='bold')
     plt.xlabel('Principal Component 1', fontsize=12)
     plt.ylabel('Principal Component 2', fontsize=12)
@@ -119,7 +119,7 @@ def reduce_dim(df, comparison_type):
 
     # 2D t-SNE Plot
     plt.figure(figsize=(10, 7))
-    sns.scatterplot(x='TSNE-1', y='TSNE-2', hue='Class Label', palette='viridis', data=tsne_df, alpha=0.8)
+    sns.scatterplot(x='TSNE-1', y='TSNE-2', hue='Class Label', data=tsne_df, alpha=0.8)
     plt.title('t-SNE Visualization of Radiomic Features by Class Label', fontsize=16, weight='bold')
     plt.xlabel('t-SNE Dimension 1', fontsize=12)
     plt.ylabel('t-SNE Dimension 2', fontsize=12)

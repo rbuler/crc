@@ -40,14 +40,15 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 # %%
-sample_idx = 1
-root = '/media/dysk_a/jr_buler/RJG-gumed/RJG-6_labels_version'
-dataset = CRCDataset(root, transform=None,
-                     save_new_masks=False)
 
-# img, mask, instance_mask, radiomics = dataset[sample_idx]
-# %%
-reduce_dim(dataset.radiomic_features, comparison_type='all') # 'colon', 'node', 'fat', 'all'
+if __name__ == '__main__':
+    
+    root = config['dir']['root']
+    dataset = CRCDataset(root, transform=None,
+                         save_new_masks=False)
+
+    radiomics = dataset.radiomic_features
+    reduce_dim(radiomics, comparison_type='all') # 'colon', 'node', 'fat', 'all'
 
 # %%
 # try:
