@@ -2,6 +2,8 @@ import os
 import typing
 import argparse
 import numpy as np
+import matplotlib.pyplot as plt
+from ipywidgets import interact, IntSlider
 
 
 def find_unique_value_mapping(mask1, mask2) -> dict:
@@ -66,3 +68,16 @@ def get_args_parser(path: typing.Union[str, bytes, os.PathLike]):
                         default=path,
                         help=help)
     return parser
+
+
+def view_slices(image, stack, cmap='gray', title=''):    
+    @interact
+    def show_slice(slice_idx=IntSlider(min=0, max=stack.shape[0]-1, step=1, value=0)):
+        plt.figure(figsize=(10, 10))
+        plt.imshow(stack[slice_idx], cmap=cmap)
+        
+        # Add image overlay here
+        plt.imshow(image[slice_idx], cmap='gray', alpha=0.5)        
+        plt.title(f'{title} - Slice {slice_idx}')
+        plt.axis('off')
+        plt.show()
