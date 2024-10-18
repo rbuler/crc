@@ -8,5 +8,5 @@ dir:
 radiomics:
   action: 'load' # 'extract' to extract radiomics, 'load' to load from pkl
   mode: 'parallel' #serial, parallel
-  n_processes: 16  # for parallel mode only; if None, use [(all available) - 1] cores
+  n_processes: 16 # for parallel mode only; if None, use [(all available) - 1] cores
   save: False # True, False; for action 'extract'

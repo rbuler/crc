@@ -39,14 +39,6 @@ def get_radiomics(images_path, masks_path, instance_masks_path, mapping_path):
         with open(config['dir']['pkl_radiomics'], 'rb') as f:
             radiomics = pickle.load(f)
         logger.info(f"Loaded radiomics features from {config['dir']['pkl_radiomics']}")
-        
-        if isinstance(radiomics, list) and all(isinstance(sublist, list) for sublist in radiomics):
-            radiomics = [item for sublist in radiomics for item in sublist]
-            if all(isinstance(d, dict) for d in radiomics):
-                radiomics = pd.DataFrame(radiomics)
-                columns = radiomics.columns.tolist()
-                reordered_columns = columns[-2:] + columns[:-2]
-                radiomics = radiomics[reordered_columns]
 
     return radiomics
 
@@ -57,7 +49,7 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
 
     for img, _, instance_mask, mapping_p in zip(images_path, masks_path, instance_masks_path, mapping_path):
         patient_id = os.path.basename(img).split('_')[0].split(' ')[0]
-    
+        patient_id =  ''.join(filter(str.isdigit, patient_id))
         mapping = {}
         instance_to_class = {}
         instance_counter = 0
@@ -69,11 +61,13 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
                     for instance_label in info['instance_labels']:
                         instance_to_class[instance_counter] = (instance_label, info['class_label'])
                         instance_counter += 1
+        for instance_label, class_label in instance_to_class.values():
             d = {
                 'image': img,
                 'segmentation': instance_mask,
-                'instance_to_class': instance_to_class,
-                'patient_id': patient_id
+                'patient_id': patient_id,
+                'instance_label': instance_label,
+                'class_label': class_label
                 
                 # TODO
                 #  
@@ -81,23 +75,18 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
                 # SO THAT THERE IS NO NEED TO EXTRACT FEATURES FOR ALL INSTANCES
                 # if instance_label in instance_labels_to_be_analysed_:
                 #
-            
             }
             list_of_dicts.append(d)
     transform = None
-    list_of_dicts = list_of_dicts[:10]
     radiomics_extractor = RadiomicsExtractor('params.yml')
 
     if config['radiomics']['mode'] in ['serial', 'parallel']:
         if config['radiomics']['mode'] == 'serial':
             results = radiomics_extractor.serial_extraction(list_of_dicts)
         elif config['radiomics']['mode'] == 'parallel':
-            results = radiomics_extractor.parallell_extraction(list_of_dicts, n_processes=config['radiomics']['n_processes'])
+            results = radiomics_extractor.parallel_extraction(list_of_dicts, n_processes=config['radiomics']['n_processes'])
         
         if config['radiomics']['save']:
-            with open(config['dir']['pkl_radiomics'], 'wb') as f:
-                pickle.dump(results, f)
-            logger.info(f"Saved radiomics features in {config['dir']['pkl_radiomics']}")
             image_types = radiomics_extractor.get_enabled_image_types()
             feature_types = radiomics_extractor.get_enabled_features()
             with open(config['dir']['inf'], 'w') as file:
@@ -111,14 +100,16 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
                 file.write('\n\nTransforms:\n' + str(transform))
                 logger.info(f"Saved extraction details in {config['dir']['inf']}")
 
-        if isinstance(results, list) and all(isinstance(sublist, list) for sublist in results):
-            radiomics = [item for sublist in results for item in sublist]
-            if all(isinstance(d, dict) for d in radiomics):
-                radiomics = pd.DataFrame(radiomics)
+            if isinstance(results, list) and all(isinstance(d, dict) for d in results):
+                radiomics = pd.DataFrame(results)
                 columns = radiomics.columns.tolist()
                 reordered_columns = columns[-2:] + columns[:-2]
                 results = radiomics[reordered_columns]
-        
+
+            with open(config['dir']['pkl_radiomics'], 'wb') as f:
+                pickle.dump(results, f)
+                logger.info(f"Saved radiomics features in {config['dir']['pkl_radiomics']}")
+
     elif config['radiomics']['mode'] not in ['parallel', 'serial']:
         raise ValueError('Invalid radiomics extraction mode')
     else:

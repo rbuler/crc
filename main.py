@@ -22,7 +22,6 @@ def view_slices(image, stack, cmap='gray', title=''):
         plt.show()
 
 
-
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -48,7 +47,7 @@ dataset = CRCDataset(root, transform=None,
 
 # img, mask, instance_mask, radiomics = dataset[sample_idx]
 # %%
-reduce_dim(dataset, comparison_type='all') # 'colon', 'node', 'fat', 'all'
+reduce_dim(dataset.radiomic_features, comparison_type='all') # 'colon', 'node', 'fat', 'all'
 
 # %%
 # try:

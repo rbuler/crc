@@ -6,7 +6,7 @@ import SimpleITK as sitk
 import multiprocessing
 # import SimpleITK as sitk
 from multiprocessing import Pool
-from tqdm import tqdm, trange
+from tqdm import trange
 from utils import pretty_dict_str
 from radiomics import featureextractor
 
@@ -53,9 +53,11 @@ class RadiomicsExtractor():
     def extract_radiomics(self, d:dict):
         image = d['image']
         segmentation = d['segmentation']
-        instance_to_class = d['instance_to_class']
+        class_label = d['class_label']
+        instance_label = d['instance_label']
         patient_id = d['patient_id']
 
+        logger.info(f"Extracting radiomics features for instance={instance_label} of id={patient_id}")
 
         image = np.asarray(nib.load(image).dataobj)
         segmentation = np.asarray(nib.load(segmentation).dataobj)
@@ -73,30 +75,24 @@ class RadiomicsExtractor():
         image = sitk.GetImageFromArray(image)
         segmentation = sitk.GetImageFromArray(segmentation)
 
-        all_features = []
-        for instance_label, class_label in instance_to_class.values():
+        features = self.extractor.execute(image, segmentation, label=instance_label)
+        features['class_label'] = class_label
+        features['instance_label'] = instance_label
+        features['patient_id'] = patient_id
+        logger.info(f"Extraction FINISHED for instance={instance_label} of id={patient_id}")
 
-            # TODO 
-            # ADD FEATURE FOR EXTRACTING FEATURES with SPECIFIC INSTANCE LABELS
-            # SO THAT THERE IS NO NEED TO EXTRACT FEATURES FOR ALL INSTANCES
-            # if instance_label (not) in [1, 2, 3, 4, 5]:
-
-            features = self.extractor.execute(image, segmentation, label=instance_label)
-            features['class_label'] = class_label
-            features['patient_id'] = patient_id
-            all_features.append(features)
-
-        return all_features
+        return features
     
 
-    def parallell_extraction(self, list_of_dicts: list, n_processes = None):
+    def parallel_extraction(self, list_of_dicts: list, n_processes = None):
         logger.info("Extraction mode: parallel")
         if n_processes is None:
             n_processes = multiprocessing.cpu_count() - 1
         start_time = time.time()
         with Pool(n_processes) as pool:
-            results = list(tqdm(pool.imap(self.extract_radiomics, list_of_dicts),
-                                 total=len(list_of_dicts)))
+            results = list(pool.map(self.extract_radiomics, list_of_dicts))
+            # results = list(tqdm(pool.imap(self.extract_radiomics, list_of_dicts),
+            #                      total=len(list_of_dicts)))
         end_time = time.time()
 
         h, m, s = self._convert_time(start_time, end_time)

@@ -5,10 +5,8 @@ from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-def reduce_dim(dataset, comparison_type):
-    df = dataset.radiomic_features
-    
-    # Define the class label pairs for each comparison type
+def reduce_dim(df, comparison_type):
+
     comparison_pairs = {
         'colon': [1, 4],
         'node': [2, 5],
