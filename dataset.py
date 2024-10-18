@@ -76,26 +76,5 @@ class CRCDataset(Dataset):
         instance_mask = instance_mask.permute(2, 1, 0)
 
         img = (img - img.min()) / (img.max() - img.min())
-
-        # mapping_path = self.mapping_path[idx]
-        # mapping = {}
-        # with open(mapping_path, 'rb') as f:
-        #     mapping = pickle.load(f)
-
-        # instance_to_class = {}  # dict with keys as instance indices and values as (instance_label, class_label) tuples
-        # instance_counter = 0
-        # for info in mapping.values():
-        #     if info['class_label'] != 0:  # Skip background
-        #         for instance_label in info['instance_labels']:
-        #             instance_to_class[instance_counter] = (instance_label, info['class_label'])
-        #             instance_counter += 1
-
-        # mapped_masks = np.zeros((len(instance_to_class), *instance_mask.shape), dtype=int)
-
-        # for instance_idx, (instance_label, class_label) in instance_to_class.items():
-        #     instance_class_mask = np.zeros_like(instance_mask, dtype=int)
-        #     instance_class_mask[instance_mask == instance_label] = class_label
-
-        #     mapped_masks[instance_idx] = instance_class_mask            
-
+        
         return img, mask, instance_mask, radiomic_features
