@@ -37,6 +37,15 @@ class CRCDataset(Dataset):
                                                    self.masks_path,
                                                    self.instance_masks_path,
                                                    self.mapping_path)
+        mapping = {"background": 0,
+                   "colon_positive": 1,
+                   "lymph_node_positive": 2,
+                   "suspicious_fat": 3,
+                   "colon_negative": 4,
+                   "lymph_node_negative": 5,
+                   "unsuspicious_fat": 6}
+        reverse_mapping = {v: k for k, v in mapping.items()}
+        self.radiomic_features['class_name'] = self.radiomic_features['class_label'].map(reverse_mapping)
 
 
     def __len__(self):
