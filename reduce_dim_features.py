@@ -3,9 +3,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
-def reduce_dim(df, comparison_type):
+def reduce_dim(df, comparison_type, scaler=None):
 
     comparison_pairs = {
         'colon': [1, 4],
@@ -26,12 +26,13 @@ def reduce_dim(df, comparison_type):
     patient_ids = df['patient_id']
 
     # Standardize the features
-    scaler = StandardScaler()
-    features_scaled = scaler.fit_transform(features)
+    if scaler:
+        scl = StandardScaler() if scaler == 'standard' else MinMaxScaler()
+        features = scl.fit_transform(features)
 
     # 2D PCA
     pca = PCA(n_components=2)
-    pca_features = pca.fit_transform(features_scaled)
+    pca_features = pca.fit_transform(features)
 
     pca_df = pd.DataFrame(data=pca_features, columns=['PC1', 'PC2'])
     pca_df['class_label'] = labels
@@ -50,7 +51,7 @@ def reduce_dim(df, comparison_type):
 
     # 3D PCA
     pca_3d = PCA(n_components=3)
-    pca_features_3d = pca_3d.fit_transform(features_scaled)
+    pca_features_3d = pca_3d.fit_transform(features)
 
     pca_df_3d = pd.DataFrame(data=pca_features_3d, columns=['PC1', 'PC2', 'PC3'])
     pca_df_3d['class_label'] = labels
@@ -74,7 +75,7 @@ def reduce_dim(df, comparison_type):
 
     # Explained Variance by Principal Components
     pca = PCA()
-    pca.fit(features_scaled)
+    pca.fit(features)
 
     explained_variance = pca.explained_variance_ratio_
     cumulative_variance = explained_variance.cumsum()
@@ -130,7 +131,7 @@ def reduce_dim(df, comparison_type):
 
     # 3D t-SNE
     tsne = TSNE(n_components=3, perplexity=30, learning_rate=200, random_state=42)
-    tsne_results = tsne.fit_transform(features_scaled)
+    tsne_results = tsne.fit_transform(features)
 
     tsne_df = pd.DataFrame(tsne_results, columns=['TSNE-1', 'TSNE-2', 'TSNE-3'])
     tsne_df['Class Label'] = labels
