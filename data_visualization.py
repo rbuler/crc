@@ -1,12 +1,11 @@
-import numpy as np
 import yaml
-import logging
 import utils
 import matplotlib.pyplot as plt
 import seaborn as sns
 from dataset import CRCDataset
 from reduce_dim_features import reduce_dim
-
+from sklearn import linear_model
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 # MAKE PARSER AND LOAD PARAMS FROM CONFIG FILE--------------------------------
 parser = utils.get_args_parser('config.yml')
 args, unknown = parser.parse_known_args()
@@ -27,8 +26,6 @@ if __name__ == '__main__':
     dataset.radiomic_features['class_label'].value_counts().plot(kind='bar', title='Class Distribution')
 
     features = dataset.radiomic_features.drop(columns=['patient_id', 'class_label', 'class_name', 'instance_label'])
-    from sklearn import linear_model
-    from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
     scaler = MinMaxScaler()
     features_scaled = scaler.fit_transform(features)
