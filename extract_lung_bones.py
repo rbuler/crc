@@ -24,23 +24,6 @@ def segment_lung_and_bone(image_hu, lung_hu_range=(-1000, -500), bone_hu_range=(
     return lung_mask, bone_mask
 
 
-def calculate_statistics(mask, image_hu):
-    """
-    Calculate statistics (mean, standard deviation) of the pixel values in a specific region.
-
-    Parameters:
-    - mask: Binary mask for the region of interest.
-    - image_hu: 3D image array in Hounsfield Units.
-
-    Returns:
-    - stats: A dictionary containing mean and standard deviation of pixel values in the masked region.
-    """
-    region_values = image_hu[mask]
-    mean_value = np.mean(region_values)
-    std_value = np.std(region_values)
-    return {"mean": mean_value, "std": std_value}
-
-
 def process_images(image_paths, window_size=10):
     """
     Process the given images to segment lung and bone regions, calculate statistics, and return summed values.
@@ -63,9 +46,6 @@ def process_images(image_paths, window_size=10):
         lung_slices_sum = np.sum(lung_mask, axis=(0, 1))[::-1]
         bone_slices_sum = np.sum(bone_mask, axis=(0, 1))[::-1]
 
-        lung_stats = calculate_statistics(lung_mask, image_hu)
-        bone_stats = calculate_statistics(bone_mask, image_hu)
-
         lung_slices_derivative = np.diff(lung_slices_sum)
 
         max_negative_change = np.min(lung_slices_derivative)
@@ -82,12 +62,11 @@ def process_images(image_paths, window_size=10):
             "image_index": idx + 1,
             "lung_slices_sum": lung_slices_sum,
             "bone_slices_sum": bone_slices_sum,
-            "lung_stats": lung_stats,
-            "bone_stats": bone_stats,
             "lung_end_index": min_value_index  # Index of the highest negative differentiation
         })
 
     return results
+
 
 # Example usage
 if __name__ == '__main__':
@@ -120,10 +99,6 @@ if __name__ == '__main__':
     plt.tight_layout()
     plt.show()
 
-    print("Lung Stats - Image 1:", results[0]["lung_stats"])
-    print("Bone Stats - Image 1:", results[0]["bone_stats"])
-    print("Lung Stats - Image 2:", results[1]["lung_stats"])
-    print("Bone Stats - Image 2:", results[1]["bone_stats"])
     print("Lung End Index - Image 1:", results[0]["lung_end_index"])
     print("Lung End Index - Image 2:", results[1]["lung_end_index"])
 # %%
