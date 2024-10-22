@@ -1,6 +1,7 @@
 import os
 import torch
 import numpy as np
+import pandas as pd
 import nibabel as nib
 from torch.utils.data import Dataset
 from connected_components import create_instance_level_mask
@@ -37,15 +38,22 @@ class CRCDataset(Dataset):
                                                    self.masks_path,
                                                    self.instance_masks_path,
                                                    self.mapping_path)
+
         mapping = {"background": 0,
-                   "colon_positive": 1,
-                   "lymph_node_positive": 2,
-                   "suspicious_fat": 3,
-                   "colon_negative": 4,
-                   "lymph_node_negative": 5,
-                   "unsuspicious_fat": 6}
+            "colon_positive": 1,
+            "lymph_node_positive": 2,
+            "suspicious_fat": 3,
+            "colon_negative": 4,
+            "lymph_node_negative": 5,
+            "unsuspicious_fat": 6}
         reverse_mapping = {v: k for k, v in mapping.items()}
-        self.radiomic_features['class_name'] = self.radiomic_features['class_label'].map(reverse_mapping)
+    
+        if isinstance(self.radiomic_features, list) and all(isinstance(d, dict) for d in self.radiomic_features):
+            radiomics = pd.DataFrame(self.radiomic_features)
+            radiomics['class_name'] = radiomics['class_label'].map(reverse_mapping)
+            columns = radiomics.columns.tolist()
+            reordered_columns = columns[-4:] + columns[:-4]
+            self.radiomic_features = radiomics[reordered_columns]
 
 
     def __len__(self):

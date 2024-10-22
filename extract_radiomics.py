@@ -5,7 +5,6 @@ import pickle
 import logging
 import datetime
 import numpy as np
-import pandas as pd
 import torch
 import utils
 from RadiomicsExtractor import RadiomicsExtractor
@@ -77,19 +76,15 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
                 #
             }
             list_of_dicts.append(d)
+    
     transform = None
     radiomics_extractor = RadiomicsExtractor('params.yml')
+
     if config['radiomics']['mode'] in ['serial', 'parallel']:
         if config['radiomics']['mode'] == 'serial':
             results = radiomics_extractor.serial_extraction(list_of_dicts)
         elif config['radiomics']['mode'] == 'parallel':
-            results = radiomics_extractor.parallel_extraction(list_of_dicts, n_processes=config['radiomics']['n_processes'])
-        
-        if isinstance(results, list) and all(isinstance(d, dict) for d in results):
-            radiomics = pd.DataFrame(results)
-            columns = radiomics.columns.tolist()
-            reordered_columns = columns[-2:] + columns[:-2]
-            results = radiomics[reordered_columns]
+            results = radiomics_extractor.parallel_extraction(list_of_dicts, n_processes=config['radiomics']['n_processes'])        
 
         if config['radiomics']['save']:
             image_types = radiomics_extractor.get_enabled_image_types()
