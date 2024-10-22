@@ -40,16 +40,24 @@ def process_images(image_paths, window_size=10):
     for idx, image_path in enumerate(image_paths):
         nifti_image = nib.load(image_path)
         image_hu = nifti_image.get_fdata()
-
+        image_hu = np.squeeze(image_hu) if len(image_hu.shape) == 4 else image_hu
         lung_mask, bone_mask = segment_lung_and_bone(image_hu)
 
         lung_slices_sum = np.sum(lung_mask, axis=(0, 1))[::-1]
         bone_slices_sum = np.sum(bone_mask, axis=(0, 1))[::-1]
 
-        lung_slices_derivative = np.diff(lung_slices_sum)
+        lung_means = [np.mean(lung_slices_sum[i:i + window_size]) for i in range(0, len(lung_slices_sum), window_size)]
+        half_length = len(lung_means) // 2
 
-        max_negative_change = np.min(lung_slices_derivative)
-        min_value_index = np.where(lung_slices_derivative == max_negative_change)[0][0]  # Get the index
+        max_descend = 0
+        max_descend_index = 0
+        for i in range(1, half_length):
+            descend = lung_means[i - 1] - lung_means[i]
+            if descend > max_descend:
+                max_descend = descend
+                max_descend_index = i
+
+        lung_end_index = max_descend_index * window_size
 
 
         """
@@ -57,12 +65,12 @@ def process_images(image_paths, window_size=10):
         AND also implement a method to find the start of the bone (lower pelvis) region.
         """
 
-
+        
         results.append({
             "image_index": idx + 1,
             "lung_slices_sum": lung_slices_sum,
             "bone_slices_sum": bone_slices_sum,
-            "lung_end_index": min_value_index  # Index of the highest negative differentiation
+            "lung_end_index": lung_end_index  # Index of the largest descend in means
         })
 
     return results
