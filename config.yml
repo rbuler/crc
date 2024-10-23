@@ -11,3 +11,8 @@ radiomics:
   mode: 'parallel' #serial, parallel
   n_processes: 16 # for parallel mode only; if None, use [(all available) - 1] cores
   save: False # True, False; for action 'extract'
+  multiple_binWidth: 
+    if_multi: True # True, False; for action 'extract'; if True, extract radiomics for multiple bins
+                   # if False, extract radiomics for single bin given in params.yml
+    binWidths: [5, 25]  # a list of binWidths 
+  
