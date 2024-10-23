@@ -80,35 +80,80 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
     transform = None
     radiomics_extractor = RadiomicsExtractor('params.yml')
 
-    if config['radiomics']['mode'] in ['serial', 'parallel']:
-        if config['radiomics']['mode'] == 'serial':
-            results = radiomics_extractor.serial_extraction(list_of_dicts)
-        elif config['radiomics']['mode'] == 'parallel':
-            results = radiomics_extractor.parallel_extraction(list_of_dicts, n_processes=config['radiomics']['n_processes'])        
-
-        if config['radiomics']['save']:
-            image_types = radiomics_extractor.get_enabled_image_types()
-            feature_types = radiomics_extractor.get_enabled_features()
-            with open(config['dir']['inf'], 'w') as file:
-                current_datetime = datetime.datetime.now()
-                file.write(f"Modified: {current_datetime}\n")
-                file.write(yaml.dump(config))
-                file.write('\n\nEnabled Image Types:\n')
-                file.write('\n'.join(image_types))
-                file.write('\n\nEnabled Features:\n')
-                file.write('\n'.join(feature_types))
-                file.write('\n\nTransforms:\n' + str(transform))
-                logger.info(f"Saved extraction details in {config['dir']['inf']}")
-
-            with open(config['dir']['pkl_radiomics'], 'wb') as f:
-                pickle.dump(results, f)
-                logger.info(f"Saved radiomics features in {config['dir']['pkl_radiomics']}")
-
-    elif config['radiomics']['mode'] not in ['parallel', 'serial']:
-        raise ValueError('Invalid radiomics extraction mode')
+    if config['radiomics']['multiple_binWidth']['if_multi']:
+        binWidths = config['radiomics']['multiple_binWidth']['binWidths']
     else:
-        results = None
+        binWidths = radiomics_extractor.extractor.settings['binWidth']
 
+    results = []
 
+    for binWidth in binWidths:
+        radiomics_extractor.extractor.settings['binWidth'] = binWidth
+
+        if config['radiomics']['mode'] in ['serial', 'parallel']:
+            if config['radiomics']['mode'] == 'serial':
+                extraction_results = radiomics_extractor.serial_extraction(list_of_dicts)
+            elif config['radiomics']['mode'] == 'parallel':
+                extraction_results = radiomics_extractor.parallel_extraction(list_of_dicts, n_processes=config['radiomics']['n_processes'])        
+
+            results.extend(extraction_results)
+
+            if config['radiomics']['save']:
+                image_types = radiomics_extractor.get_enabled_image_types()
+                feature_types = radiomics_extractor.get_enabled_features()
+                with open(config['dir']['inf'], 'w') as file:
+                    current_datetime = datetime.datetime.now()
+                    file.write(f"Modified: {current_datetime}\n")
+                    file.write(yaml.dump(config))
+                    file.write('\n\nEnabled Image Types:\n')
+                    file.write('\n'.join(image_types))
+                    file.write('\n\nEnabled Features:\n')
+                    file.write('\n'.join(feature_types))
+                    file.write('\n\nTransforms:\n' + str(transform))
+                    file.write(f"\n\nBin Widths: {binWidths}")
+                    logger.info(f"Saved extraction details in {config['dir']['inf']}")
+
+                with open(config['dir']['pkl_radiomics'], 'wb') as f:
+                    pickle.dump(results, f)
+                    logger.info(f"Saved radiomics features in {config['dir']['pkl_radiomics']}")
+
+        elif config['radiomics']['mode'] not in ['parallel', 'serial']:
+            raise ValueError('Invalid radiomics extraction mode')
+        else:
+            results = None
+            
     return results
+
+    # if config['radiomics']['mode'] in ['serial', 'parallel']:
+    #     if config['radiomics']['mode'] == 'serial':
+    #         results = radiomics_extractor.serial_extraction(list_of_dicts)
+    #     elif config['radiomics']['mode'] == 'parallel':
+    #         results = radiomics_extractor.parallel_extraction(list_of_dicts, n_processes=config['radiomics']['n_processes'])        
+
+    #     if config['radiomics']['save']:
+    #         image_types = radiomics_extractor.get_enabled_image_types()
+    #         feature_types = radiomics_extractor.get_enabled_features()
+    #         with open(config['dir']['inf'], 'w') as file:
+    #             current_datetime = datetime.datetime.now()
+    #             file.write(f"Modified: {current_datetime}\n")
+    #             file.write(yaml.dump(config))
+    #             file.write('\n\nEnabled Image Types:\n')
+    #             file.write('\n'.join(image_types))
+    #             file.write('\n\nEnabled Features:\n')
+    #             file.write('\n'.join(feature_types))
+    #             file.write('\n\nTransforms:\n' + str(transform))
+    #             if config['radiomics']['multiple_binWidth']['if_multi']:
+    #                     file.write(f"\n\nBin Widths: {config['radiomics']['multiple_binWidth']['binWidths']}")
+    #             logger.info(f"Saved extraction details in {config['dir']['inf']}")
+
+    #         with open(config['dir']['pkl_radiomics'], 'wb') as f:
+    #             pickle.dump(results, f)
+    #             logger.info(f"Saved radiomics features in {config['dir']['pkl_radiomics']}")
+
+    # elif config['radiomics']['mode'] not in ['parallel', 'serial']:
+    #     raise ValueError('Invalid radiomics extraction mode')
+    # else:
+    #     results = None
+
+    # return results
 # %%
