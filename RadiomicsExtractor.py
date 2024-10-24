@@ -77,7 +77,7 @@ class RadiomicsExtractor():
         features['instance_label'] = instance_label
         features['patient_id'] = patient_id
         
-        logger.info(f"Profiler OUTPUT{profiler1.output_text(unicode=True, color=True)}")
+        # logger.info(f"Profiler OUTPUT{profiler1.output_text(unicode=True, color=True)}")
         logger.info(f"Extraction FINISHED for class={class_label} & instance={instance_label} of id={patient_id}")
         return features
     

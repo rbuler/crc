@@ -47,13 +47,9 @@ class CRCDataset(Dataset):
             "lymph_node_negative": 5,
             "unsuspicious_fat": 6}
         reverse_mapping = {v: k for k, v in mapping.items()}
-    
-        if isinstance(self.radiomic_features, list) and all(isinstance(d, dict) for d in self.radiomic_features):
-            radiomics = pd.DataFrame(self.radiomic_features)
-            radiomics['class_name'] = radiomics['class_label'].map(reverse_mapping)
-            columns = radiomics.columns.tolist()
-            reordered_columns = columns[-4:] + columns[:-4]
-            self.radiomic_features = radiomics[reordered_columns]
+        
+        if isinstance(self.radiomic_features, pd.DataFrame):
+            self.radiomic_features.insert(1, 'class_name', self.radiomic_features['class_label'].map(reverse_mapping))
 
 
     def __len__(self):

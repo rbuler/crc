@@ -7,6 +7,9 @@ from radiomics import setVerbosity
 from dataset import CRCDataset
 from reduce_dim_features import reduce_dim
 from classifiers import Classifier
+import pandas as pd
+from warnings import simplefilter
+simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 # from utils import view_slices
 
 logger = logging.getLogger(__name__)
@@ -35,11 +38,11 @@ if __name__ == '__main__':
     dataset = CRCDataset(root, transform=None,
                          save_new_masks=False)
 
-    radiomics = dataset.radiomic_features
-    reduce_dim(radiomics, comparison_type='node') # 'colon', 'node', 'fat', 'all'
+    radiomic_features = dataset.radiomic_features
+    reduce_dim(radiomic_features, comparison_type='node') # 'colon', 'node', 'fat', 'all'
 
     # Example classification using XGBoost
-    data = radiomics
+    data = radiomic_features
     filtered_data = data[data['class_label'].isin([2, 5])]
     filtered_data['class_label'] = filtered_data['class_label'].map({2: 0, 5: 1})
     y = filtered_data['class_label']
