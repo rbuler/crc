@@ -5,9 +5,13 @@ import pickle
 import logging
 import datetime
 import numpy as np
+import pandas as pd
 import torch
 import utils
 from RadiomicsExtractor import RadiomicsExtractor
+from warnings import simplefilter
+simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
+
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -76,7 +80,7 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
                 #
             }
             list_of_dicts.append(d)
-    
+    list_of_dicts = list_of_dicts[:2]
     transform = None
     radiomics_extractor = RadiomicsExtractor('params.yml')
 
@@ -89,71 +93,53 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
 
     for binWidth in binWidths:
         radiomics_extractor.extractor.settings['binWidth'] = binWidth
-
+        
         if config['radiomics']['mode'] in ['serial', 'parallel']:
             if config['radiomics']['mode'] == 'serial':
                 extraction_results = radiomics_extractor.serial_extraction(list_of_dicts)
             elif config['radiomics']['mode'] == 'parallel':
                 extraction_results = radiomics_extractor.parallel_extraction(list_of_dicts, n_processes=config['radiomics']['n_processes'])        
-
             results.extend(extraction_results)
-
-            if config['radiomics']['save']:
-                image_types = radiomics_extractor.get_enabled_image_types()
-                feature_types = radiomics_extractor.get_enabled_features()
-                with open(config['dir']['inf'], 'w') as file:
-                    current_datetime = datetime.datetime.now()
-                    file.write(f"Modified: {current_datetime}\n")
-                    file.write(yaml.dump(config))
-                    file.write('\n\nEnabled Image Types:\n')
-                    file.write('\n'.join(image_types))
-                    file.write('\n\nEnabled Features:\n')
-                    file.write('\n'.join(feature_types))
-                    file.write('\n\nTransforms:\n' + str(transform))
-                    file.write(f"\n\nBin Widths: {binWidths}")
-                    logger.info(f"Saved extraction details in {config['dir']['inf']}")
-
-                with open(config['dir']['pkl_radiomics'], 'wb') as f:
-                    pickle.dump(results, f)
-                    logger.info(f"Saved radiomics features in {config['dir']['pkl_radiomics']}")
-
         elif config['radiomics']['mode'] not in ['parallel', 'serial']:
-            raise ValueError('Invalid radiomics extraction mode')
-        else:
             results = None
-            
+            raise ValueError('Invalid radiomics extraction mode')
+
+    if results is not None:
+        results = pd.DataFrame(results)
+        id_cols = ['class_label', 'instance_label', 'patient_id']
+
+        df_grouped = results.groupby(id_cols).agg(lambda x: list(x)).reset_index()
+        val_cols = df_grouped.drop(columns=id_cols)
+        idx_cols = df_grouped[id_cols]
+        new_cols_names = []
+        new_results = pd.DataFrame(idx_cols)
+
+        for col in val_cols.columns:
+            for binWidth_idx, binWidth in enumerate(binWidths):
+                new_col_name = f"{col}_binWidth{binWidth}"
+                new_cols_names.append(new_col_name)
+                new_results[new_col_name] = val_cols[col].apply(lambda x: x[binWidth_idx])
+        
+        results = new_results.T.drop_duplicates().T
+
+        if config['radiomics']['save']:
+            image_types = radiomics_extractor.get_enabled_image_types()
+            feature_types = radiomics_extractor.get_enabled_features()
+            with open(config['dir']['inf'], 'w') as file:
+                current_datetime = datetime.datetime.now()
+                file.write(f"Modified: {current_datetime}\n")
+                file.write(yaml.dump(config))
+                file.write('\n\nEnabled Image Types:\n')
+                file.write('\n'.join(image_types))
+                file.write('\n\nEnabled Features:\n')
+                file.write('\n'.join(feature_types))
+                file.write('\n\nTransforms:\n' + str(transform))
+                file.write(f"\n\nBin Widths: {binWidths}")
+                logger.info(f"Saved extraction details in {config['dir']['inf']}")
+
+            with open(config['dir']['pkl_radiomics'], 'wb') as f:
+                pickle.dump(results, f)
+                logger.info(f"Saved radiomics features in {config['dir']['pkl_radiomics']}")
+
     return results
-
-    # if config['radiomics']['mode'] in ['serial', 'parallel']:
-    #     if config['radiomics']['mode'] == 'serial':
-    #         results = radiomics_extractor.serial_extraction(list_of_dicts)
-    #     elif config['radiomics']['mode'] == 'parallel':
-    #         results = radiomics_extractor.parallel_extraction(list_of_dicts, n_processes=config['radiomics']['n_processes'])        
-
-    #     if config['radiomics']['save']:
-    #         image_types = radiomics_extractor.get_enabled_image_types()
-    #         feature_types = radiomics_extractor.get_enabled_features()
-    #         with open(config['dir']['inf'], 'w') as file:
-    #             current_datetime = datetime.datetime.now()
-    #             file.write(f"Modified: {current_datetime}\n")
-    #             file.write(yaml.dump(config))
-    #             file.write('\n\nEnabled Image Types:\n')
-    #             file.write('\n'.join(image_types))
-    #             file.write('\n\nEnabled Features:\n')
-    #             file.write('\n'.join(feature_types))
-    #             file.write('\n\nTransforms:\n' + str(transform))
-    #             if config['radiomics']['multiple_binWidth']['if_multi']:
-    #                     file.write(f"\n\nBin Widths: {config['radiomics']['multiple_binWidth']['binWidths']}")
-    #             logger.info(f"Saved extraction details in {config['dir']['inf']}")
-
-    #         with open(config['dir']['pkl_radiomics'], 'wb') as f:
-    #             pickle.dump(results, f)
-    #             logger.info(f"Saved radiomics features in {config['dir']['pkl_radiomics']}")
-
-    # elif config['radiomics']['mode'] not in ['parallel', 'serial']:
-    #     raise ValueError('Invalid radiomics extraction mode')
-    # else:
-    #     results = None
-
-    # return results
 # %%
