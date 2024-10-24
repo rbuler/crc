@@ -80,7 +80,6 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
                 #
             }
             list_of_dicts.append(d)
-    list_of_dicts = list_of_dicts[:2]
     transform = None
     radiomics_extractor = RadiomicsExtractor('params.yml')
 
