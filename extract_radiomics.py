@@ -87,7 +87,8 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
     if config['radiomics']['multiple_binWidth']['if_multi']:
         binWidths = config['radiomics']['multiple_binWidth']['binWidths']
     else:
-        binWidths = radiomics_extractor.extractor.settings['binWidth']
+        binWidths = []
+        binWidths.append(radiomics_extractor.extractor.settings['binWidth'])
 
     results = []
 
