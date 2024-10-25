@@ -120,7 +120,8 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
                 new_cols_names.append(new_col_name)
                 new_results[new_col_name] = val_cols[col].apply(lambda x: x[binWidth_idx])
         
-        results = new_results.T.drop_duplicates().T
+        # results = new_results.T.drop_duplicates().T
+        results = new_results
 
         if config['radiomics']['save']:
             image_types = radiomics_extractor.get_enabled_image_types()
