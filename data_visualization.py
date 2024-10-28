@@ -28,7 +28,7 @@ if __name__ == '__main__':
     selected_features_icc = icc_select_reproducible(features=features,
                                                     labels=labels,
                                                     comparison_type='node',
-                                                    bin_widths=[5,25])
+                                                    bin_widths=config['binWidths'])
 
 #%%
     # TO DO: steps from README.md
