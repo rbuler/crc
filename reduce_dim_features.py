@@ -1,9 +1,64 @@
 import pandas as pd
+import pingouin as pg
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
+import warnings
+warnings.filterwarnings("ignore")
+
+def icc_select_reproducible(features: pd.DataFrame,
+                            labels: pd.DataFrame,
+                            comparison_type: str,
+                            bin_widths: list) -> pd.Series:
+    """
+    Selects reproducible features based on Intraclass Correlation Coefficient (ICC).
+    Parameters:
+    features (pd.DataFrame): DataFrame containing feature data.
+    labels (pd.DataFrame): DataFrame containing class labels.
+    comparison_type (str): Type of comparison to perform. Must be one of 'colon', 'node', 'fat', or 'all'.
+    bin_widths (list): List of bin widths to consider for ICC calculation.
+    Returns:
+    pd.Series: Series containing names of redundant features with high ICC values.
+    Raises:
+    ValueError: If an invalid comparison type is provided.
+    Notes:
+    - The function filters features based on their reproducibility across different bin widths.
+    - Features with ICC values greater than 0.75 are considered redundant.
+    """    
+    comparison_pairs = {
+        'colon': [1, 4],
+        'node': [2, 5],
+        'fat': [3, 6], 
+        'all': [1, 2, 3, 4, 5, 6]
+    }
+    
+    if comparison_type not in comparison_pairs:
+        raise ValueError("Invalid comparison type. Choose from 'fat', 'node', 'colon' and 'all'.")
+    
+    data = features.copy()
+    print("Data shape:", data.shape)
+    class_labels = comparison_pairs[comparison_type]
+    data = data[labels['class_label'].isin(class_labels)]
+    print("Data shape for comparison:", data.shape)
+    feature_names = list(set(col.split('_binWidth')[0] for col in data.columns if 'binWidth' in col))
+    data['subject'] = range(len(data))
+    # Function to calculate ICC for each feature across bin widths
+    icc_results = []
+    for feature in feature_names:
+        feature_data = data[['subject'] + [f"{feature}_binWidth{bin_width}" for bin_width in bin_widths].copy()]
+        feature_data = feature_data.melt(id_vars=['subject'], var_name='bin_width', value_name='value')
+        icc = pg.intraclass_corr(data=feature_data, targets='subject', raters='bin_width', ratings='value')
+        icc_value = icc[icc['Type'] == 'ICC2']['ICC'].values[0]
+        icc_results.append((f"{feature}_binWidth25", icc_value))
+    icc_df = pd.DataFrame(icc_results, columns=['Feature', 'ICC'])
+    # Filter based on ICC threshold (e.g., 0.75)
+
+    redundant_features = icc_df[icc_df['ICC'] > 0.75]['Feature']
+    print("Redundant Features (high ICC):", redundant_features.tolist())
+
+    return redundant_features
 
 def reduce_dim(df, comparison_type, scaler=None):
 
