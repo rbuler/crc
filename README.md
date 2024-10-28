@@ -16,12 +16,12 @@ The goal of this project is to improve diagnostic accuracy by leveraging radiomi
 ## TODO
 
 Feature selection / Dimension reduction
-        - Step 1: Exclusion of nonreproducible features
-        - Step 2: Selection of the most relevant variables for the respective task
-        - Step 3: Building correlation clusters
-        - Step 4: Data visualization - once the data dim has been reduced.
-        - Step 5: Selection of most representative features for each cluster
-        - Step 6: Model fitting with remaining features (usually 3-10 fts)
+- Step 1: Exclusion of nonreproducible features
+- Step 2: Selection of the most relevant variables for the respective task
+- Step 3: Building correlation clusters
+- Step 4: Data visualization - once the data dim has been reduced.
+- Step 5: Selection of most representative features for each cluster
+- Step 6: Model fitting with remaining features (usually 3-10 fts)
 
 - radiomic features for different bin-widths (5-50?)
 - LASSO 
