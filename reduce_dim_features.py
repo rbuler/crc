@@ -22,21 +22,20 @@ def reduce_dim(df, comparison_type, scaler=None):
     df = df[df['class_label'].isin(class_labels)]
     
     features = df.drop(columns=['class_label', 'class_name', 'patient_id', 'instance_label'])
-    labels = df['class_label']
-    patient_ids = df['patient_id']
+    labels = df['class_label'].reset_index(drop=True)
 
     # Standardize the features
     if scaler:
         scl = StandardScaler() if scaler == 'standard' else MinMaxScaler()
-        features = scl.fit_transform(features)
-
+        scaled_features = scl.fit_transform(features)
+        features = pd.DataFrame(scaled_features, columns=features.columns)
+        
     # 2D PCA
     pca = PCA(n_components=2)
     pca_features = pca.fit_transform(features)
 
     pca_df = pd.DataFrame(data=pca_features, columns=['PC1', 'PC2'])
     pca_df['class_label'] = labels
-    pca_df['patient_id'] = patient_ids
 
     # 2D PCA Plot
     plt.figure(figsize=(10, 8))
@@ -55,7 +54,6 @@ def reduce_dim(df, comparison_type, scaler=None):
 
     pca_df_3d = pd.DataFrame(data=pca_features_3d, columns=['PC1', 'PC2', 'PC3'])
     pca_df_3d['class_label'] = labels
-    pca_df_3d['patient_id'] = patient_ids
 
     # 3D PCA Plot
     fig = plt.figure(figsize=(10, 7))
