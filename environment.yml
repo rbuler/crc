@@ -140,6 +140,7 @@ dependencies:
   - libxml2=2.13.1=hfdd30dd_2
   - libzlib=1.2.13=h4ab18f5_6
   - libzopfli=1.0.3=h9c3ff4c_0
+  - littleutils=0.2.4=pyhd8ed1ab_0
   - llvm-openmp=14.0.6=h9e868ea_0
   - lz4-c=1.9.4=h6a678d5_1
   - markupsafe=2.1.3=py38h5eee18b_0
@@ -165,14 +166,17 @@ dependencies:
   - openh264=2.1.1=h4ff587b_0
   - openjpeg=2.5.0=h7d73246_1
   - openssl=3.3.2=hb9d3cd8_0
+  - outdated=0.2.2=pyhd8ed1ab_1
   - packaging=24.1=py38h06a4308_0
-  - pandas=2.0.3=py38h01efb38_1
+  - pandas=1.5.3=py38hdc8b05c_1
+  - pandas-flavor=0.6.0=pyhd8ed1ab_2
   - parso=0.8.3=pyhd3eb1b0_0
   - patsy=0.5.6=pyhd8ed1ab_0
   - pcre2=10.42=hebb0a14_1
   - pexpect=4.8.0=pyhd3eb1b0_3
   - pickleshare=0.7.5=pyhd3eb1b0_1003
   - pillow=10.4.0=py38h5eee18b_0
+  - pingouin=0.5.5=pyhd8ed1ab_0
   - pip=24.0=py38h06a4308_0
   - platformdirs=3.10.0=py38h06a4308_0
   - plotly=5.22.0=py38h2f386ee_0
@@ -221,6 +225,7 @@ dependencies:
   - stack_data=0.2.0=pyhd3eb1b0_0
   - statsmodels=0.14.1=py38h7f0c24c_0
   - sympy=1.13.2=py38h06a4308_0
+  - tabulate=0.9.0=pyhd8ed1ab_1
   - tbb=2021.8.0=hdb19cb5_0
   - tenacity=8.2.3=py38h06a4308_0
   - threadpoolctl=3.5.0=pyhc1e730c_0
@@ -240,6 +245,7 @@ dependencies:
   - wcwidth=0.2.5=pyhd3eb1b0_0
   - wheel=0.43.0=py38h06a4308_0
   - widgetsnbextension=4.0.10=py38h06a4308_0
+  - xarray=2023.1.0=pyhd8ed1ab_0
   - xgboost=2.1.1=cuda120_pyhc629091_2
   - xz=5.4.6=h5eee18b_1
   - yaml=0.2.5=h7b6447c_0
