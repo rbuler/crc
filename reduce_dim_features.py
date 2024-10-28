@@ -21,7 +21,7 @@ def reduce_dim(df, comparison_type, scaler=None):
     class_labels = comparison_pairs[comparison_type]
     df = df[df['class_label'].isin(class_labels)]
     
-    features = df.drop(columns=['class_label', 'patient_id', 'instance_label'])
+    features = df.drop(columns=['class_label', 'class_name', 'patient_id', 'instance_label'])
     labels = df['class_label']
     patient_ids = df['patient_id']
 
