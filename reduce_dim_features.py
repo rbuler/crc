@@ -6,27 +6,43 @@ from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import warnings
+from typing import List
 warnings.filterwarnings("ignore")
+
+
+def plot_reduced_dim(features, labels):
+
+    plot_pca(features, labels, n_components=2)
+    plot_pca(features, labels, n_components=3)
+    plot_tsne(features, labels, n_components=2)
+    plot_tsne(features, labels, n_components=3)
+
 
 def icc_select_reproducible(features: pd.DataFrame,
                             labels: pd.DataFrame,
-                            comparison_type: str,
-                            bin_widths: list) -> pd.Series:
+                            threshold: float,
+                         comparison_type: str,
+                            bin_widths: List[int]) -> pd.Series:
     """
     Selects reproducible features based on Intraclass Correlation Coefficient (ICC).
-    Parameters:
-    features (pd.DataFrame): DataFrame containing feature data.
-    labels (pd.DataFrame): DataFrame containing class labels.
-    comparison_type (str): Type of comparison to perform. Must be one of 'colon', 'node', 'fat', or 'all'.
-    bin_widths (list): List of bin widths to consider for ICC calculation.
+    
+    Args:
+        features (pd.DataFrame): DataFrame containing feature data.
+        labels (pd.DataFrame): DataFrame containing class labels.
+        threshold (float): ICC threshold to consider a feature as redundant (from 0. to 1.).
+        comparison_type (str): Type of comparison to perform. Must be one of 'colon', 'node', 'fat', or 'all'.
+        bin_widths (List[int]): List of integer bin widths to consider for ICC calculation.
+        
     Returns:
-    pd.Series: Series containing names of redundant features with high ICC values.
+        pd.Series: Series containing names of redundant features with high ICC values.
+        
     Raises:
-    ValueError: If an invalid comparison type is provided.
+        ValueError: If an invalid comparison type is provided.
+        
     Notes:
-    - The function filters features based on their reproducibility across different bin widths.
-    - Features with ICC values greater than 0.75 are considered redundant.
-    """    
+        The function filters features based on their reproducibility across different bin widths.
+        Features with ICC values greater than the specified threshold (e.g. 0.75) are considered reproducible.
+    """
     comparison_pairs = {
         'colon': [1, 4],
         'node': [2, 5],
@@ -36,6 +52,8 @@ def icc_select_reproducible(features: pd.DataFrame,
     
     if comparison_type not in comparison_pairs:
         raise ValueError("Invalid comparison type. Choose from 'fat', 'node', 'colon' and 'all'.")
+
+    assert len(bin_widths) == 2, "Only two bin widths are supported yet."
     
     data = features.copy()
     print("Data shape:", data.shape)
@@ -51,85 +69,82 @@ def icc_select_reproducible(features: pd.DataFrame,
         feature_data = feature_data.melt(id_vars=['subject'], var_name='bin_width', value_name='value')
         icc = pg.intraclass_corr(data=feature_data, targets='subject', raters='bin_width', ratings='value')
         icc_value = icc[icc['Type'] == 'ICC2']['ICC'].values[0]
-        icc_results.append((f"{feature}_binWidth25", icc_value))
+        # reproducible features does not differ significantly across bin widths
+        # so the first bin width is selected by default, as other bin width is redundant
+        # Note it works only for two bin widths
+        icc_results.append((f"{feature}_binWidth{bin_widths[0]}", icc_value))
     icc_df = pd.DataFrame(icc_results, columns=['Feature', 'ICC'])
-    # Filter based on ICC threshold (e.g., 0.75)
+    reproducible_features = icc_df[icc_df['ICC'] > threshold]['Feature']
+    print(f"Number of reproducible features (high ICC): {len(reproducible_features.tolist())}")
 
-    redundant_features = icc_df[icc_df['ICC'] > 0.75]['Feature']
-    print("Redundant Features (high ICC):", redundant_features.tolist())
+    return reproducible_features
 
-    return redundant_features
 
-def reduce_dim(df, comparison_type, scaler=None):
+def plot_tsne(features, labels, n_components=2):
+    # 2D t-SNE
+    tsne = TSNE(n_components=n_components, perplexity=30, learning_rate=200, random_state=42)
+    tsne_results = tsne.fit_transform(features)
 
-    comparison_pairs = {
-        'colon': [1, 4],
-        'node': [2, 5],
-        'fat': [3, 6], 
-        'all': [1, 2, 3, 4, 5, 6]
-    }
-    
-    if comparison_type not in comparison_pairs:
-        raise ValueError("Invalid comparison type. Choose from 'fat', 'node', 'colon' and 'all'.")
-    
-    # Filter the dataset based on the comparison type
-    class_labels = comparison_pairs[comparison_type]
-    df = df[df['class_label'].isin(class_labels)]
-    
-    features = df.drop(columns=['class_label', 'class_name', 'patient_id', 'instance_label'])
-    labels = df['class_label'].reset_index(drop=True)
+    tsne_df = pd.DataFrame(tsne_results, columns=[f"TSNE-{i}" for i in range(1, n_components + 1)])
+    tsne_df['Class Label'] = labels
 
-    # Standardize the features
-    if scaler:
-        scl = StandardScaler() if scaler == 'standard' else MinMaxScaler()
-        scaled_features = scl.fit_transform(features)
-        features = pd.DataFrame(scaled_features, columns=features.columns)
-        
-    # 2D PCA
-    pca = PCA(n_components=2)
+    fig = plt.figure(figsize=(10, 7))
+    if n_components == 2:
+        sns.scatterplot(x='TSNE-1', y='TSNE-2', hue='Class Label', data=tsne_df, alpha=0.8)
+        plt.title('t-SNE Visualization of Radiomic Features by Class Label', fontsize=16, weight='bold')
+        plt.xlabel('t-SNE Dimension 1', fontsize=12)
+        plt.ylabel('t-SNE Dimension 2', fontsize=12)
+        plt.legend(loc='best', title='Class Label')
+    elif n_components == 3:
+        ax = fig.add_subplot(111, projection='3d')
+        scatter = ax.scatter(tsne_df['TSNE-1'], tsne_df['TSNE-2'], tsne_df['TSNE-3'],
+                             c=tsne_df['Class Label'], cmap='viridis', alpha=0.8)
+        legend1 = ax.legend(*scatter.legend_elements(), title="Class Label", loc='upper right')
+        ax.add_artist(legend1)
+        plt.title('3D t-SNE Visualization of Radiomic Features by Class Label', fontsize=16, weight='bold')
+        ax.set_xlabel('t-SNE Dimension 1', fontsize=12)
+        ax.set_ylabel('t-SNE Dimension 2', fontsize=12)
+        ax.set_zlabel('t-SNE Dimension 3', fontsize=12)
+        plt.tight_layout()
+    plt.grid()
+    plt.tight_layout()
+    plt.show()
+    return
+
+
+def plot_pca(features, labels, n_components=2):
+    pca = PCA(n_components=n_components)
     pca_features = pca.fit_transform(features)
 
-    pca_df = pd.DataFrame(data=pca_features, columns=['PC1', 'PC2'])
+    pca_df = pd.DataFrame(data=pca_features, columns=[f'PC{i}' for i in range(1, n_components + 1)])
     pca_df['class_label'] = labels
 
-    # 2D PCA Plot
-    plt.figure(figsize=(10, 8))
-    sns.scatterplot(data=pca_df, x='PC1', y='PC2', hue='class_label', s=100)
-    plt.title('PCA of Radiomic Features by Class Label', fontsize=16, weight='bold')
-    plt.xlabel('Principal Component 1', fontsize=12)
-    plt.ylabel('Principal Component 2', fontsize=12)
-    plt.legend(title='Class Label')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
-    # 3D PCA
-    pca_3d = PCA(n_components=3)
-    pca_features_3d = pca_3d.fit_transform(features)
-
-    pca_df_3d = pd.DataFrame(data=pca_features_3d, columns=['PC1', 'PC2', 'PC3'])
-    pca_df_3d['class_label'] = labels
-
-    # 3D PCA Plot
     fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection='3d')
-    scatter = ax.scatter(pca_df_3d['PC1'], pca_df_3d['PC2'], pca_df_3d['PC3'],
-                         c=pca_df_3d['class_label'], cmap='viridis', alpha=0.8)
+    if n_components == 2:
+        ax = fig.add_subplot(111)
+        sns.scatterplot(ax=ax, data=pca_df, x='PC1', y='PC2', hue='class_label', s=100)
+        plt.title('2D PCA of Radiomic Features by Class Label', fontsize=16, weight='bold')
+        plt.xlabel('Principal Component 1', fontsize=12)
+        plt.ylabel('Principal Component 2', fontsize=12)
+        plt.legend(title='Class Label')
 
-    legend1 = ax.legend(*scatter.legend_elements(), title="Class Label", loc='upper left')
-    ax.add_artist(legend1)
-    plt.title('3D PCA of Radiomic Features by Class Label', fontsize=16, weight='bold')
-    ax.set_xlabel('Principal Component 1', fontsize=12)
-    ax.set_ylabel('Principal Component 2', fontsize=12)
-    ax.set_zlabel('Principal Component 3', fontsize=12)
-    ax.set_box_aspect(None, zoom=0.85)
+    elif n_components == 3:  
+        ax = fig.add_subplot(111, projection='3d')
+        scatter = ax.scatter(pca_df['PC1'], pca_df['PC2'], pca_df['PC3'],
+                             c=pca_df['class_label'], cmap='viridis', alpha=0.8)
+        legend = ax.legend(*scatter.legend_elements(), title="Class Label", loc='upper left')
+        ax.add_artist(legend)
+        plt.title('3D PCA of Radiomic Features by Class Label', fontsize=16, weight='bold')
+        ax.set_xlabel('Principal Component 1', fontsize=12)
+        ax.set_ylabel('Principal Component 2', fontsize=12)
+        ax.set_zlabel('Principal Component 3', fontsize=12)
+        ax.set_box_aspect(None, zoom=0.85)
     plt.tight_layout()
     plt.show()
-
+    
     # Explained Variance by Principal Components
     pca = PCA()
     pca.fit(features)
-
     explained_variance = pca.explained_variance_ratio_
     cumulative_variance = explained_variance.cumsum()
 
@@ -139,9 +154,6 @@ def reduce_dim(df, comparison_type, scaler=None):
         'Explained Variance (%)': explained_variance * 100,
         'Cumulative Variance (%)': cumulative_variance * 100,
     })
-
-    # Print the first 20 features
-    print(pca_df.head(20))
 
     # Bar plot for Explained Variance
     plt.figure(figsize=(10, 6))
@@ -163,43 +175,5 @@ def reduce_dim(df, comparison_type, scaler=None):
     plt.grid()
     plt.tight_layout()
     plt.show()
-
-    # 2D t-SNE
-    tsne = TSNE(n_components=2, perplexity=30, learning_rate=200, random_state=42)
-    tsne_results = tsne.fit_transform(pca_features)
-
-    tsne_df = pd.DataFrame(tsne_results, columns=['TSNE-1', 'TSNE-2'])
-    tsne_df['Class Label'] = labels
-
-    # 2D t-SNE Plot
-    plt.figure(figsize=(10, 7))
-    sns.scatterplot(x='TSNE-1', y='TSNE-2', hue='Class Label', data=tsne_df, alpha=0.8)
-    plt.title('t-SNE Visualization of Radiomic Features by Class Label', fontsize=16, weight='bold')
-    plt.xlabel('t-SNE Dimension 1', fontsize=12)
-    plt.ylabel('t-SNE Dimension 2', fontsize=12)
-    plt.legend(loc='best', title='Class Label')
-    plt.grid()
-    plt.tight_layout()
-    plt.show()
-
-    # 3D t-SNE
-    tsne = TSNE(n_components=3, perplexity=30, learning_rate=200, random_state=42)
-    tsne_results = tsne.fit_transform(features)
-
-    tsne_df = pd.DataFrame(tsne_results, columns=['TSNE-1', 'TSNE-2', 'TSNE-3'])
-    tsne_df['Class Label'] = labels
-
-    # 3D t-SNE Plot
-    fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection='3d')
-    scatter = ax.scatter(tsne_df['TSNE-1'], tsne_df['TSNE-2'], tsne_df['TSNE-3'],
-                         c=tsne_df['Class Label'], cmap='viridis', alpha=0.8)
-
-    legend1 = ax.legend(*scatter.legend_elements(), title="Class Label", loc='upper right')
-    ax.add_artist(legend1)
-    plt.title('3D t-SNE Visualization of Radiomic Features by Class Label', fontsize=16, weight='bold')
-    ax.set_xlabel('t-SNE Dimension 1', fontsize=12)
-    ax.set_ylabel('t-SNE Dimension 2', fontsize=12)
-    ax.set_zlabel('t-SNE Dimension 3', fontsize=12)
-    plt.tight_layout()
-    plt.show()
+    
+    return
