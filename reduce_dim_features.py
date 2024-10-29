@@ -7,6 +7,8 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import warnings
 from typing import List
+from sklearn.cluster import KMeans
+from sklearn.feature_selection import SelectKBest, f_classif
 warnings.filterwarnings("ignore")
 
 
@@ -79,6 +81,24 @@ def icc_select_reproducible(features: pd.DataFrame,
 
     return reproducible_features
 
+
+def select_best_from_clusters(features: pd.DataFrame,
+                              n_clusters: int,
+                              num_features: int,
+                              random_state: int) -> pd.Series:
+    # Apply clustering (e.g., KMeans)
+    kmeans = KMeans(n_clusters=n_clusters, random_state=random_state)
+    clusters = kmeans.fit_predict(features)
+    # Select most representative features for each cluster using SelectKBest
+    # Use clusters as target labels for feature selection
+    selector = SelectKBest(score_func=f_classif, k=num_features)  # Select top k features
+    selector.fit(features, clusters)
+    # Get mask of selected features
+    selected_features_mask = selector.get_support()
+    selected_features = features.columns[selected_features_mask]
+    # Reduce dimensions by keeping only selected features
+    reduced_df = features[selected_features]
+    return reduced_df
 
 def plot_tsne(features, labels, n_components=2):
     # 2D t-SNE
