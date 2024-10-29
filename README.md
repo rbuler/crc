@@ -24,6 +24,10 @@ Feature selection / Dimension reduction
 - Step 6: Model fitting with remaining features (usually 3-10 fts)
 - Step 6.5: Fitting the model with the other features together with the clinical features
 
+Machine learning model fitting
+- Step 1:
+
+
 - radiomic features for different bin-widths (5-50?)
 - LASSO 
 - use range resegmentation?
