@@ -86,8 +86,15 @@ if __name__ == '__main__':
     
     
     # Step 5: Selection of most representative features for each cluster
-    # TODO
+    df = select_best_from_clusters(features=selected_features_df,
+                                   n_clusters=10,
+                                   num_features=10,
+                                   random_state=config['seed'])
+    plot_reduced_dim(df, labels_for_comparison['class_label'])
 
+    # Step 5.5: Add clinical features to the selected features
+    # TODO
+    
     # Step 6: Model fitting with remaining features (usually 3-10 fts)
     # TODO
 
