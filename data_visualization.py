@@ -25,10 +25,12 @@ if __name__ == '__main__':
     plt.show()
     features = dataset.radiomic_features[dataset.radiomic_features.columns[4:]]
     labels = dataset.radiomic_features[dataset.radiomic_features.columns[:4]]
-    selected_features_icc = icc_select_reproducible(features=features,
-                                                    labels=labels,
-                                                    comparison_type='node',
-                                                    bin_widths=config['binWidths'])
+    if config['radiomics']['multiple_binWidth']['if_multi']:
+        bin_widths = config['radiomics']['multiple_binWidth']['binWidths']
+        selected_features_icc = icc_select_reproducible(features=features,
+                                                        labels=labels,
+                                                        comparison_type='node',
+                                                        bin_widths=bin_widths)
 
 #%%
     # TO DO: steps from README.md
