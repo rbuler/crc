@@ -17,3 +17,39 @@ radiomics:
                    # if False, extract radiomics for single bin given in params.yml
     binWidths: [5, 25]  # a list of binWidths 
   
+clinical_data_attributes: # selected most useful attributes from clinical data
+  Nr pacjenta: int
+  Płeć: str
+  Wiek w momencie dx: int
+  Masa ciała przed rozpoczęciu leczenia: int
+  Wzrost: int
+  BMI: float
+  BMI kat: str
+  pT: str
+  pN: str
+  M 2: str
+  T: str
+  N: str
+  M: str
+  TNM wg mnie: str
+  Diagnoza: str
+  Zaznaczona Tk tłuszczoa 0-nie 1-tak 3-zaznaczona ale niezmieniona: str
+  Zdrowe jelito lokalizacja: str
+  Liczba zaznaczonych ww chłonnych: str
+  liczba węzłów w preparacie: str
+  liczba węzłów przerzutowych: str
+  Aspiryna (czy przyjmuje) tak/nie: str
+  Palący: str
+  Paczkolata: float
+  Cukrzyca (ta/nie): bool
+  OSAS: bool
+  Migotanie przedsionków (tak/nie): bool
+  Choroba niedokrwienna serca (tak/nie): str
+  Nadciśnienie tętnicze (tak/nie): str
+  przebyty zawał (tak/nie): str
+  przebyty udar (tak/nie): str
+  stan po interwencji na naczyniach wieńcowych (tak/nie): str
+  stan po pomostowaniu naczyń wieńcowych (tak/nie): str
+  IBD: str
+  Sterydy (czy przyjmuje) (tak/nie) (obecnie lub w ciagu ostatnich 3 miesięcy): str
+  Immunosupresja (czy przyjmuje) (tak/nie) (obecnie lub w ciagu ostatnich 3 miesięcy): str
