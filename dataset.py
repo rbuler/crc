@@ -43,12 +43,12 @@ class CRCDataset(Dataset):
             clinical_data,
             delimiter=';',
             encoding='utf-8',
-            # header=0,
             index_col=False,
             na_filter=True,
             na_values=default_missing)
         # drop rows with all NaN values
         self.clinical_data.dropna(how='all', axis=0, inplace=True)
+        self.clinical_data.columns = self.clinical_data.columns.str.strip()
 
         mapping = {"background": 0,
             "colon_positive": 1,
