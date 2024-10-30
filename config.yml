@@ -6,11 +6,13 @@ dir:
   inf: '/media/dysk_a/jr_buler/RJG-gumed/radiomics_info.pkl'
   pkl_radiomics: '/media/dysk_a/jr_buler/RJG-gumed/radiomics_features.pkl'
 
-radiomics:
+
+radiomics:  
   action: 'load' # 'extract' to extract radiomics, 'load' to load from pkl
   mode: 'parallel' #serial, parallel
-  n_processes: 16 # for parallel mode only; if None, use [(all available) - 1] cores
+  n_processes: 2 # for parallel mode only; if None, use [(all available) - 1] cores
   save: False # True, False; for action 'extract'
+  
   multiple_binWidth: 
     if_multi: True # True, False; for action 'extract'; if True, extract radiomics for multiple bins
                    # if False, extract radiomics for single bin given in params.yml
