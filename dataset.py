@@ -8,7 +8,7 @@ from connected_components import create_instance_level_mask
 from extract_radiomics import get_radiomics
 
 class CRCDataset(Dataset):
-    def __init__(self, root, transform=None, save_new_masks=True):
+    def __init__(self, root, clinical_data, transform=None, save_new_masks=True):
         self.root = root
         self.images_path = []
         self.masks_path = []
@@ -38,6 +38,17 @@ class CRCDataset(Dataset):
                                                    self.masks_path,
                                                    self.instance_masks_path,
                                                    self.mapping_path)
+        default_missing = pd._libs.parsers.STR_NA_VALUES
+        self.clinical_data = pd.read_csv(
+            clinical_data,
+            delimiter=';',
+            encoding='utf-8',
+            index_col=False,
+            na_filter=True,
+            na_values=default_missing)
+        # drop rows with all NaN values
+        self.clinical_data.dropna(how='all', axis=0, inplace=True)
+        self.clinical_data.columns = self.clinical_data.columns.str.strip()
 
         mapping = {"background": 0,
             "colon_positive": 1,
