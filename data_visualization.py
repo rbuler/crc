@@ -30,6 +30,12 @@ if __name__ == '__main__':
         'fat': [3, 6], 
         'all': [1, 2, 3, 4, 5, 6]
     }
+    dataset.clinical_data = dataset.clinical_data[config['clinical_data_attributes'].keys()]
+    dataset.clinical_data.dropna(subset=['Nr pacjenta'], inplace=True)
+    for column, dtype in config['clinical_data_attributes'].items():
+        dataset.clinical_data[column] = dataset.clinical_data[column].astype(dtype)
+    dataset.clinical_data = dataset.clinical_data.reset_index(drop=True)
+    
     radiomics = dataset.radiomic_features
     dataset.radiomic_features['class_name'].value_counts().plot(kind='bar', title='Class Distribution', )
     plt.xticks(rotation=45)
