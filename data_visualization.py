@@ -19,7 +19,10 @@ with open(args.config_path) as file:
 if __name__ == '__main__':
     
     root = config['dir']['root']
-    dataset = CRCDataset(root, transform=None,
+    clinical_data = config['dir']['clinical_data']
+    dataset = CRCDataset(root,
+                         clinical_data=clinical_data,
+                         transform=None,
                          save_new_masks=False)
     comparison_pairs = {
         'colon': [1, 4],

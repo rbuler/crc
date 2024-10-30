@@ -2,7 +2,8 @@ seed: 42
 device: 'cuda:0'
 
 dir:
-  root: '/media/dysk_a/jr_buler/RJG-gumed/RJG-6_labels_version' 
+  root: '/media/dysk_a/jr_buler/RJG-gumed/RJG-6_labels_version'
+  clinical_data: '/media/dysk_a/jr_buler/RJG-gumed/crc_data_30-10-24.csv'
   inf: '/media/dysk_a/jr_buler/RJG-gumed/radiomics_info.pkl'
   pkl_radiomics: '/media/dysk_a/jr_buler/RJG-gumed/radiomics_features.pkl'
 
