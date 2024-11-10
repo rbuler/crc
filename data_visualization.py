@@ -35,7 +35,31 @@ if __name__ == '__main__':
     for column, dtype in config['clinical_data_attributes'].items():
         dataset.clinical_data[column] = dataset.clinical_data[column].astype(dtype)
     dataset.clinical_data = dataset.clinical_data.reset_index(drop=True)
+
+
+    # ------------------------
+    selected_classes = ['lymph_node_positive', 'lymph_node_negative']
+    df = dataset.radiomic_features[dataset.radiomic_features['class_name'].isin(selected_classes)]
+    df['patient_id'] = df['patient_id'].astype(int)
+    df = df.sort_values(by='patient_id').reset_index(drop=True)
     
+    counts_per_patient = df.groupby('patient_id')['class_name'].value_counts()
+
+    # Iterate through the grouped data and print the results
+    for patient_id, class_counts in counts_per_patient.groupby(level=0):
+        counts_str = ", ".join([f"{class_name}: {count}" for class_name, count in class_counts.items()])
+        for class_name, count in class_counts.items():
+            dataset.clinical_data.loc[dataset.clinical_data['Nr pacjenta'] == patient_id, class_name[1]] = count
+    dataset.clinical_data[
+        ['lymph_node_positive', 'lymph_node_negative']] = dataset.clinical_data[
+            ['lymph_node_positive', 'lymph_node_negative']].fillna(0).astype(int)
+    # cols = ['Nr pacjenta', 'pN', 'N', 'TNM wg mnie',
+    #         'lymph_node_positive', 'lymph_node_negative']
+    # dataset.clinical_data[cols]
+
+    #TODO drop patients with no target (rad+clinical)
+    # ------------------------
+    # %%
     radiomics = dataset.radiomic_features
     dataset.radiomic_features['class_name'].value_counts().plot(kind='bar', title='Class Distribution', )
     plt.xticks(rotation=45)
