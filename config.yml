@@ -3,7 +3,8 @@ device: 'cuda:0'
 
 dir:
   root: '/media/dysk_a/jr_buler/RJG-gumed/RJG-6_labels_version'
-  clinical_data: '/media/dysk_a/jr_buler/RJG-gumed/crc_data_30-10-24.csv'
+  # clinical_data: '/media/dysk_a/jr_buler/RJG-gumed/crc_data_30-10-24.csv'
+  clinical_data: '/media/dysk_a/jr_buler/RJG-gumed/crc_data_18-12-24.csv'
   inf: '/media/dysk_a/jr_buler/RJG-gumed/radiomics_info.pkl'
   pkl_radiomics: '/media/dysk_a/jr_buler/RJG-gumed/radiomics_features.pkl'
 
@@ -35,9 +36,11 @@ clinical_data_attributes: # selected most useful attributes from clinical data
   M: str
   TNM wg mnie: str
   Diagnoza: str
-  Zaznaczona Tk tłuszczoa 0-nie 1-tak 3-zaznaczona ale niezmieniona: str
+  # Zaznaczona Tk tłuszczoa 0-nie 1-tak 3-zaznaczona ale niezmieniona: str
+  Zaznaczona Tk tłuszczoa 1-tak 2-zaznaczona ale niezmieniona: str
   Zdrowe jelito lokalizacja: str
-  Liczba zaznaczonych ww chłonnych: str
+  # Liczba zaznaczonych ww chłonnych: str
+  Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane: str
   liczba węzłów w preparacie: str
   liczba węzłów przerzutowych: str
   Aspiryna (czy przyjmuje) tak/nie: str
