@@ -46,9 +46,7 @@ class CRCDataset(Dataset):
             index_col=False,
             na_filter=True,
             na_values=default_missing)
-        # drop rows with all NaN values
-        self.clinical_data.dropna(how='all', axis=0, inplace=True)
-        self.clinical_data.columns = self.clinical_data.columns.str.strip()
+        self._clean_tnm_data()
 
         mapping = {"background": 0,
             "colon_positive": 1,
@@ -78,7 +76,7 @@ class CRCDataset(Dataset):
         mask_path = self.masks_path[idx]
         instance_mask_path = self.instance_masks_path[idx]
         radiomic_features = self.radiomic_features[self.radiomic_features['patient_id'] == self.get_patient_id(idx)]
-
+        clinical_data = self.clinical_data[self.clinical_data['Nr pacjenta'] == int(self.get_patient_id(idx))]
 
         img = np.asarray(nib.load(image_path).dataobj)
         img = torch.from_numpy(img)
@@ -101,4 +99,45 @@ class CRCDataset(Dataset):
 
         img = (img - img.min()) / (img.max() - img.min())
         
-        return img, mask, instance_mask, radiomic_features
+        return img, mask, instance_mask, radiomic_features, clinical_data
+
+
+    def _clean_tnm_data(self):
+
+        self.clinical_data = self.clinical_data[
+            self.clinical_data['TNM wg mnie'].notna() & (self.clinical_data['TNM wg mnie'] != '')]
+        
+        self.clinical_data = self.clinical_data[
+            self.clinical_data['TNM wg mnie'].str.startswith('T')]
+        
+        self.clinical_data.dropna(how='all', axis=0, inplace=True)
+        self.clinical_data.dropna(subset=['TNM wg mnie'], inplace=True)
+
+        self.clinical_data = self.clinical_data[
+            ~self.clinical_data['TNM wg mnie'].str.contains('/')
+        ]
+
+        self.clinical_data = self.clinical_data[
+            self.clinical_data['TNM wg mnie'].str.contains(r'T', regex=True) &
+            self.clinical_data['TNM wg mnie'].str.contains(r'N', regex=True)
+        ]
+
+
+        def make_lower_case(tnm_string):
+            return ''.join([char.lower() if char in ['A', 'B', 'C', 'X'] else char for char in tnm_string])
+
+        self.clinical_data['TNM wg mnie'] = self.clinical_data['TNM wg mnie'].apply(make_lower_case)
+    
+
+        self.clinical_data.columns = self.clinical_data.columns.str.strip()
+        
+        ### TODO 
+        ### add TNM split into T N M columns
+        ###
+        ###    df['wmT'] = df['TNM wg mnie'].str.extract(r'T(\d+[a-bA-B]?)')
+        ###    df['wmN'] = df['TNM wg mnie'].str.extract(r'N(\d+[a-cA-C]?)')
+  
+        # cols = ['Nr pacjenta', 'TNM wg mnie', 'wmT', 'wmN'] + [col for col in self.clinical_data.columns if col not in ['Nr pacjenta', 'TNM wg mnie', 'wmT', 'wmN']]
+        # self.clinical_data = self.clinical_data[cols]
+
+
