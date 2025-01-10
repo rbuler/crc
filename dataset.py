@@ -128,14 +128,12 @@ class CRCDataset(Dataset):
 
         self.clinical_data['TNM wg mnie'] = self.clinical_data['TNM wg mnie'].apply(make_lower_case)
     
-
+        self.clinical_data['wmT'] = self.clinical_data['TNM wg mnie'].str.extract(r'T(\d+[a-bA-B]?)')
+        self.clinical_data['wmN'] = self.clinical_data['TNM wg mnie'].str.extract(r'N(\d+[a-cA-C]?)')
         self.clinical_data.columns = self.clinical_data.columns.str.strip()
         
         ### TODO 
         ### add TNM split into T N M columns
-        ###
-        ###    df['wmT'] = df['TNM wg mnie'].str.extract(r'T(\d+[a-bA-B]?)')
-        ###    df['wmN'] = df['TNM wg mnie'].str.extract(r'N(\d+[a-cA-C]?)')
   
         # cols = ['Nr pacjenta', 'TNM wg mnie', 'wmT', 'wmN'] + [col for col in self.clinical_data.columns if col not in ['Nr pacjenta', 'TNM wg mnie', 'wmT', 'wmN']]
         # self.clinical_data = self.clinical_data[cols]
