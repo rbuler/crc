@@ -27,9 +27,11 @@ clinical_data_attributes: # selected most useful attributes from clinical data
   wmN: str
   pT: str
   pN: str
-  M 2: str
+  overstaging_T: str
+  overstaging_N: str
   T: str
   N: str
+  M 2: str
   M: str
   
   Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane: str
