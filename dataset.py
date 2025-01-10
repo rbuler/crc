@@ -48,6 +48,14 @@ class CRCDataset(Dataset):
             na_values=default_missing)
         self._clean_tnm_data()
 
+        category_order_N = {'0': 0, '1a': 1, '1b': 2, '2a': 3, '2b': 4, '1c': np.nan, 'nan': np.nan}
+        category_order_T = {'0': 0, '1': 1, '2': 2, '3': 3, '4a': 4, '4b': 5, 'nan': np.nan}
+        self._compute_overstaging_tnm('wmT', 'pT', category_order_T, 'overstaging_T')
+        self._compute_overstaging_tnm('wmN', 'pN', category_order_N, 'overstaging_N')
+
+
+
+
         mapping = {"background": 0,
             "colon_positive": 1,
             "lymph_node_positive": 2,
@@ -131,11 +139,14 @@ class CRCDataset(Dataset):
         self.clinical_data['wmT'] = self.clinical_data['TNM wg mnie'].str.extract(r'T(\d+[a-bA-B]?)')
         self.clinical_data['wmN'] = self.clinical_data['TNM wg mnie'].str.extract(r'N(\d+[a-cA-C]?)')
         self.clinical_data.columns = self.clinical_data.columns.str.strip()
-        
-        ### TODO 
-        ### add TNM split into T N M columns
-  
-        # cols = ['Nr pacjenta', 'TNM wg mnie', 'wmT', 'wmN'] + [col for col in self.clinical_data.columns if col not in ['Nr pacjenta', 'TNM wg mnie', 'wmT', 'wmN']]
-        # self.clinical_data = self.clinical_data[cols]
+    
 
-
+    def _compute_overstaging_tnm(self, wm_column: str, p_column: str, category_order: dict, result_column: str):
+        wm_numeric = self.clinical_data[wm_column].map(category_order)
+        p_numeric = self.clinical_data[p_column].map(category_order)
+        comparison = wm_numeric - p_numeric
+        result = comparison.apply(lambda x: 
+            -1 if x < 0 else 
+            (1 if x > 0 else 
+            (0 if pd.notna(x) else np.nan)))
+        self.clinical_data[result_column] = result
