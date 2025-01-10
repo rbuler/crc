@@ -23,6 +23,8 @@ radiomics:
 clinical_data_attributes: # selected most useful attributes from clinical data
   Nr pacjenta: int
   TNM wg mnie: str
+  wmT: str
+  wmN: str
   pT: str
   pN: str
   M 2: str
