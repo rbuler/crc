@@ -8,7 +8,7 @@ from connected_components import create_instance_level_mask
 from extract_radiomics import get_radiomics
 
 class CRCDataset(Dataset):
-    def __init__(self, root, clinical_data, transform=None, save_new_masks=True):
+    def __init__(self, root, clinical_data, config, transform=None, save_new_masks=True):
         self.root = root
         self.images_path = []
         self.masks_path = []
@@ -46,12 +46,26 @@ class CRCDataset(Dataset):
             index_col=False,
             na_filter=True,
             na_values=default_missing)
-        self._clean_tnm_data()
+        
 
+        self.clinical_data.columns = self.clinical_data.columns.str.strip()
+        self.clinical_data = self.clinical_data[config['clinical_data_attributes'].keys()]
+        self.clinical_data.dropna(subset=['Nr pacjenta'], inplace=True)
+
+
+        for column, dtype in config['clinical_data_attributes'].items():
+            self.clinical_data[column] = self.clinical_data[column].astype(dtype)
+        self.clinical_data = self.clinical_data.reset_index(drop=True)
+
+
+        self._clean_tnm_data()
         category_order_N = {'0': 0, '1a': 1, '1b': 2, '2a': 3, '2b': 4, '1c': np.nan, 'nan': np.nan}
         category_order_T = {'0': 0, '1': 1, '2': 2, '3': 3, '4a': 4, '4b': 5, 'nan': np.nan}
         self._compute_overstaging_tnm('wmT', 'pT', category_order_T, 'overstaging_T')
         self._compute_overstaging_tnm('wmN', 'pN', category_order_N, 'overstaging_N')
+
+
+        
 
 
 
@@ -138,7 +152,6 @@ class CRCDataset(Dataset):
     
         self.clinical_data['wmT'] = self.clinical_data['TNM wg mnie'].str.extract(r'T(\d+[a-bA-B]?)')
         self.clinical_data['wmN'] = self.clinical_data['TNM wg mnie'].str.extract(r'N(\d+[a-cA-C]?)')
-        self.clinical_data.columns = self.clinical_data.columns.str.strip()
     
 
     def _compute_overstaging_tnm(self, wm_column: str, p_column: str, category_order: dict, result_column: str):
@@ -150,3 +163,38 @@ class CRCDataset(Dataset):
             (1 if x > 0 else 
             (0 if pd.notna(x) else np.nan)))
         self.clinical_data[result_column] = result
+
+
+    def fill_num_nodes(
+        self,
+        col: str,
+        node_count_N: dict,
+        result_column: str
+    ):
+        node_count = self.clinical_data[col].map(node_count_N)
+        
+        self.clinical_data[result_column] = node_count
+
+        def calculate_overnoding(row):
+            range = row[result_column]
+            positive = row['lymph_node_positive']
+
+            _min, _max = (range if isinstance(range, list) else [range, range])
+
+
+            if positive < _min:
+                return -1
+            elif _min <= positive <= _max:
+                return 0
+            else:
+                return 1
+        name = col + '_overnoding'
+        self.clinical_data[name] = self.clinical_data.apply(calculate_overnoding, axis=1)
+
+
+    def update_clinical_data(self):
+        node_count_N = {'0': 0, '1a': 1, '1b': [2, 3], '1c': 0, '2a': [4, 6], '2b': [7, 99], 'nan': np.nan}
+        self.fill_num_nodes('wmN', node_count_N, 'wmN_node_count')
+        self.fill_num_nodes('pN', node_count_N, 'pN_node_count')
+        
+
