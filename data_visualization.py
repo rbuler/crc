@@ -22,6 +22,7 @@ if __name__ == '__main__':
     clinical_data = config['dir']['clinical_data']
     dataset = CRCDataset(root,
                          clinical_data=clinical_data,
+                         config=config,
                          transform=None,
                          save_new_masks=False)
     comparison_pairs = {
@@ -30,13 +31,6 @@ if __name__ == '__main__':
         'fat': [3, 6], 
         'all': [1, 2, 3, 4, 5, 6]
     }
-    dataset.clinical_data = dataset.clinical_data[config['clinical_data_attributes'].keys()]
-    dataset.clinical_data.dropna(subset=['Nr pacjenta'], inplace=True)
-    for column, dtype in config['clinical_data_attributes'].items():
-        dataset.clinical_data[column] = dataset.clinical_data[column].astype(dtype)
-    dataset.clinical_data = dataset.clinical_data.reset_index(drop=True)
-
-
     # ------------------------
     selected_classes = ['lymph_node_positive', 'lymph_node_negative']
     df = dataset.radiomic_features[dataset.radiomic_features['class_name'].isin(selected_classes)]
@@ -53,6 +47,7 @@ if __name__ == '__main__':
     dataset.clinical_data[
         ['lymph_node_positive', 'lymph_node_negative']] = dataset.clinical_data[
             ['lymph_node_positive', 'lymph_node_negative']].fillna(0).astype(int)
+    dataset.update_clinical_data()
     # cols = ['Nr pacjenta', 'pN', 'N', 'TNM wg mnie',
     #         'lymph_node_positive', 'lymph_node_negative']
     # dataset.clinical_data[cols]
