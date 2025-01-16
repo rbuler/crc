@@ -48,9 +48,14 @@ if __name__ == '__main__':
         ['lymph_node_positive', 'lymph_node_negative']] = dataset.clinical_data[
             ['lymph_node_positive', 'lymph_node_negative']].fillna(0).astype(int)
     dataset.update_clinical_data()
-    # cols = ['Nr pacjenta', 'pN', 'N', 'TNM wg mnie',
-    #         'lymph_node_positive', 'lymph_node_negative']
-    # dataset.clinical_data[cols]
+   
+   
+
+
+    columns_to_select = ["Nr pacjenta", "wmN", "pN", "wmN_overnoding", "pN_overnoding", "lymph_node_positive",
+                         "Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane"]
+    subset = dataset.clinical_data[columns_to_select]
+
 
     #TODO drop patients with no target (rad+clinical)
     # ------------------------
