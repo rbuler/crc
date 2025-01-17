@@ -24,7 +24,7 @@ if __name__ == '__main__':
                          clinical_data=clinical_data,
                          config=config,
                          transform=None,
-                         save_new_masks=False)
+                         save_new_masks=True)
     comparison_pairs = {
         'colon': [1, 4],
         'node': [2, 5],
@@ -56,6 +56,11 @@ if __name__ == '__main__':
                          "Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane"]
     subset = dataset.clinical_data[columns_to_select]
 
+    # select only patients that have already have images
+    ids = []
+    for i in range(len(dataset)):
+        ids.append(int(dataset.get_patient_id(i)))
+    subset = subset[subset['Nr pacjenta'].isin(ids)]
 
     #TODO drop patients with no target (rad+clinical)
     # ------------------------
