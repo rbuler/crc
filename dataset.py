@@ -51,24 +51,18 @@ class CRCDataset(Dataset):
         self.clinical_data.columns = self.clinical_data.columns.str.strip()
         self.clinical_data = self.clinical_data[config['clinical_data_attributes'].keys()]
         self.clinical_data.dropna(subset=['Nr pacjenta'], inplace=True)
-
-
+        self.clinical_data.dropna(subset=['Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane'], inplace=True)
+        
         for column, dtype in config['clinical_data_attributes'].items():
             self.clinical_data[column] = self.clinical_data[column].astype(dtype)
         self.clinical_data = self.clinical_data.reset_index(drop=True)
 
 
-        self._clean_tnm_data()
+        self._clean_tnm_clinical_data()
         category_order_N = {'0': 0, '1a': 1, '1b': 2, '2a': 3, '2b': 4, '1c': np.nan, 'nan': np.nan}
         category_order_T = {'0': 0, '1': 1, '2': 2, '3': 3, '4a': 4, '4b': 5, 'nan': np.nan}
         self._compute_overstaging_tnm('wmT', 'pT', category_order_T, 'overstaging_T')
         self._compute_overstaging_tnm('wmN', 'pN', category_order_N, 'overstaging_N')
-
-
-        
-
-
-
 
         mapping = {"background": 0,
             "colon_positive": 1,
@@ -81,6 +75,7 @@ class CRCDataset(Dataset):
         
         if isinstance(self.radiomic_features, pd.DataFrame):
             self.radiomic_features.insert(1, 'class_name', self.radiomic_features['class_label'].map(reverse_mapping))
+
 
 
     def __len__(self):
@@ -124,7 +119,7 @@ class CRCDataset(Dataset):
         return img, mask, instance_mask, radiomic_features, clinical_data
 
 
-    def _clean_tnm_data(self):
+    def _clean_tnm_clinical_data(self):
 
         self.clinical_data = self.clinical_data[
             self.clinical_data['TNM wg mnie'].notna() & (self.clinical_data['TNM wg mnie'] != '')]
@@ -169,18 +164,21 @@ class CRCDataset(Dataset):
         self,
         col: str,
         node_count_N: dict,
-        result_column: str
+        range_column: str,
+        value_column: str
     ):
         node_count = self.clinical_data[col].map(node_count_N)
         
-        self.clinical_data[result_column] = node_count
+        self.clinical_data[range_column] = node_count
 
         def calculate_overnoding(row):
-            range = row[result_column]
-            positive = row['lymph_node_positive']
+            range = row[range_column]
+            positive = row[value_column]
+
+            if not isinstance(positive, int):
+                positive = int(positive)
 
             _min, _max = (range if isinstance(range, list) else [range, range])
-
 
             if positive < _min:
                 return -1
@@ -188,13 +186,17 @@ class CRCDataset(Dataset):
                 return 0
             else:
                 return 1
-        name = col + '_overnoding'
+        name = col + value_column + '_overnoding'
+
         self.clinical_data[name] = self.clinical_data.apply(calculate_overnoding, axis=1)
 
 
     def update_clinical_data(self):
         node_count_N = {'0': 0, '1a': 1, '1b': [2, 3], '1c': 0, '2a': [4, 6], '2b': [7, 99], 'nan': np.nan}
-        self.fill_num_nodes('wmN', node_count_N, 'wmN_node_count')
-        self.fill_num_nodes('pN', node_count_N, 'pN_node_count')
+        self.fill_num_nodes('wmN', node_count_N, 'wmN_node_count', 'lymph_node_positive')
+        self.fill_num_nodes('pN', node_count_N, 'pN_node_count', 'lymph_node_positive')
+        
+        self.fill_num_nodes('wmN', node_count_N, 'wmN_node_count', 'Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane')
+        
         
 
