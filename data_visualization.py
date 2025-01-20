@@ -1,6 +1,7 @@
 # %%
 import yaml
 import utils
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from dataset import CRCDataset
@@ -24,7 +25,7 @@ if __name__ == '__main__':
                          clinical_data=clinical_data,
                          config=config,
                          transform=None,
-                         save_new_masks=True)
+                         save_new_masks=False)
     comparison_pairs = {
         'colon': [1, 4],
         'node': [2, 5],
@@ -48,12 +49,10 @@ if __name__ == '__main__':
         ['lymph_node_positive', 'lymph_node_negative']] = dataset.clinical_data[
             ['lymph_node_positive', 'lymph_node_negative']].fillna(0).astype(int)
     dataset.update_clinical_data()
-   
-   
 
-
-    columns_to_select = ["Nr pacjenta", "wmN", "pN", "wmN_overnoding", "pN_overnoding", "lymph_node_positive",
-                         "Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane"]
+    columns_to_select = ["Nr pacjenta", "wmN", "pN", "wmNlymph_node_positive_overnoding", "pNlymph_node_positive_overnoding", "lymph_node_positive",
+                         "Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane",
+                         "wmNLiczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane_overnoding"]
     subset = dataset.clinical_data[columns_to_select]
 
     # select only patients that have already have images
