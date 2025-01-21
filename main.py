@@ -5,7 +5,7 @@ import logging
 import utils
 from radiomics import setVerbosity
 from dataset import CRCDataset
-from reduce_dim_features import reduce_dim
+from reduce_dim_features import plot_reduced_dim
 # from classifiers import Classifier
 import pandas as pd
 from warnings import simplefilter
@@ -35,14 +35,35 @@ torch.cuda.manual_seed(seed)
 if __name__ == '__main__':
     
     root = config['dir']['root']
-    dataset = CRCDataset(root, transform=None,
+    dataset = CRCDataset(root, clinical_data=config['dir']['clinical_data'], transform=None,
                          save_new_masks=False)
 
-    radiomic_features = dataset.radiomic_features
+
+    dataset.clinical_data = dataset.clinical_data[config['clinical_data_attributes'].keys()]
+    dataset.clinical_data.dropna(subset=['Nr pacjenta'], inplace=True)
+
+    for column, dtype in config['clinical_data_attributes'].items():
+        dataset.clinical_data[column] = dataset.clinical_data[column].astype(dtype)
+    
+    dataset.clinical_data = dataset.clinical_data.reset_index(drop=True)
 
 
+    
     ## x = reduce_dim  TODO add return value
-    reduce_dim(radiomic_features, comparison_type='node', scaler='standard') # 'colon', 'node', 'fat', 'all'
+
+    comparison_pairs = {
+        'colon': [1, 4],
+        'node': [2, 5],
+        'fat': [3, 6], 
+        'all': [1, 2, 3, 4, 5, 6]
+    }
+    comparison_type = 'node'
+
+    radiomic_features = dataset.radiomic_features[dataset.radiomic_features.columns[4:]]
+    labels = dataset.radiomic_features[dataset.radiomic_features.columns[:4]]
+    labels_for_comparison = labels[labels['class_label'].isin(comparison_pairs[comparison_type])].reset_index(drop=True)
+    
+    plot_reduced_dim(radiomic_features, labels_for_comparison['class_name'])
     
     ## Example classification using XGBoost
     # data = radiomic_features
