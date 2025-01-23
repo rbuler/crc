@@ -26,13 +26,8 @@ if __name__ == '__main__':
                          config=config,
                          transform=None,
                          save_new_masks=False)
-    comparison_pairs = {
-        'colon': [1, 4],
-        'node': [2, 5],
-        'fat': [3, 6], 
-        'all': [1, 2, 3, 4, 5, 6]
-    }
     # ------------------------
+    
     selected_classes = ['lymph_node_positive', 'lymph_node_negative']
     df = dataset.radiomic_features[dataset.radiomic_features['class_name'].isin(selected_classes)]
     df['patient_id'] = df['patient_id'].astype(int)
@@ -64,6 +59,13 @@ if __name__ == '__main__':
     #TODO drop patients with no target (rad+clinical)
     # ------------------------
     # %%
+    comparison_pairs = {
+        'colon': [1, 4],
+        'node': [2, 5],
+        'fat': [3, 6], 
+        'all': [1, 2, 3, 4, 5, 6]
+    }
+    
     radiomics = dataset.radiomic_features
     dataset.radiomic_features['class_name'].value_counts().plot(kind='bar', title='Class Distribution', )
     plt.xticks(rotation=45)
