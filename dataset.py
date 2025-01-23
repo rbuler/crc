@@ -203,6 +203,11 @@ class CRCDataset(Dataset):
         self.fill_num_nodes('wmN', node_count_N, 'wmN_node_count', 'lymph_node_positive')
         self.fill_num_nodes('pN', node_count_N, 'pN_node_count', 'lymph_node_positive')
         
+        #
+        # TODO - change column name so it is shorter
+        #
+        #
+
         self.fill_num_nodes('wmN', node_count_N, 'wmN_node_count', 'Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane')
         
         
