@@ -1,21 +1,27 @@
 # %%
 import yaml
 import utils
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from dataset import CRCDataset
-from reduce_dim_features import *
-from sklearn import linear_model
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import logging
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from dataset import CRCDataset
+from sklearn import linear_model
+from sklearn.preprocessing import StandardScaler
+from reduce_dim_features import icc_select_reproducible, plot_reduced_dim, select_best_from_clusters
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
 # MAKE PARSER AND LOAD PARAMS FROM CONFIG FILE--------------------------------
 parser = utils.get_args_parser('config.yml')
 args, unknown = parser.parse_known_args()
 with open(args.config_path) as file:
     config = yaml.load(file, Loader=yaml.FullLoader)
+
+np.random.seed(config['seed'])
 
 if __name__ == '__main__':
     
@@ -25,7 +31,7 @@ if __name__ == '__main__':
                          clinical_data=clinical_data,
                          config=config,
                          transform=None,
-                         save_new_masks=False)
+                         save_new_masks=True)
     # ------------------------
     
     selected_classes = ['lymph_node_positive', 'lymph_node_negative']
@@ -45,7 +51,7 @@ if __name__ == '__main__':
             ['lymph_node_positive', 'lymph_node_negative']].fillna(0).astype(int)
     dataset.update_clinical_data()
 
-    columns_to_select = ["Nr pacjenta", "wmN", "pN", "wmNlymph_node_positive_overnoding", "pNlymph_node_positive_overnoding", "lymph_node_positive",
+    columns_to_select = ["Nr pacjenta", "wmN", "pN", "lymph_node_positive", "lymph_node_negative", "wmNlymph_node_positive_overnoding", "pNlymph_node_positive_overnoding",
                          "Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane",
                          "wmNLiczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane_overnoding"]
     subset = dataset.clinical_data[columns_to_select]
