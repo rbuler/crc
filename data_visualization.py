@@ -31,7 +31,7 @@ if __name__ == '__main__':
                          clinical_data=clinical_data,
                          config=config,
                          transform=None,
-                         save_new_masks=True)
+                         save_new_masks=False)
     # ------------------------
     
     selected_classes = ['lymph_node_positive', 'lymph_node_negative']

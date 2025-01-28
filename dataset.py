@@ -1,4 +1,5 @@
 import os
+import re
 import torch
 import numpy as np
 import pandas as pd
@@ -20,7 +21,7 @@ class CRCDataset(Dataset):
                 for name in files:
                     f = os.path.join(root, name)
                     if 'labels.nii.gz' in f:
-                        create_instance_level_mask(f, save_dir=f, verbose=False)
+                        create_instance_level_mask(f, save_dir=f, verbose=True)
     
         for root, dirs, files in os.walk(self.root, topdown=False):
             for name in files:
@@ -56,9 +57,8 @@ class CRCDataset(Dataset):
         for column, dtype in config['clinical_data_attributes'].items():
             self.clinical_data[column] = self.clinical_data[column].astype(dtype)
         self.clinical_data = self.clinical_data.reset_index(drop=True)
-
-
         self._clean_tnm_clinical_data()
+
         category_order_N = {'0': 0, '1a': 1, '1b': 2, '2a': 3, '2b': 4, '1c': np.nan, 'nan': np.nan}
         self._compute_overstaging_tnm('wmN', 'pN', category_order_N, 'N_wm_p_overstaging')
         
@@ -137,9 +137,20 @@ class CRCDataset(Dataset):
         self.clinical_data.dropna(how='all', axis=0, inplace=True)
         self.clinical_data.dropna(subset=['TNM wg mnie'], inplace=True)
 
-        self.clinical_data = self.clinical_data[
-            ~self.clinical_data['TNM wg mnie'].str.contains('/')
-        ]
+
+
+        # 
+        # ONLY PART OF TNM BEFORE '/' IS USED
+        # CONSIDER CHANGING THIS IN THE FUTURE 
+        #        
+        self.clinical_data['TNM wg mnie'] = self.clinical_data[
+            'TNM wg mnie'].str.replace(r'^.*/', '', regex=True)
+
+        # self.clinical_data = self.clinical_data[
+        #     ~self.clinical_data['TNM wg mnie'].str.contains('/')
+        # ]
+
+
 
         self.clinical_data = self.clinical_data[
             self.clinical_data['TNM wg mnie'].str.contains(r'T', regex=True) &
@@ -154,7 +165,7 @@ class CRCDataset(Dataset):
     
         self.clinical_data['wmT'] = self.clinical_data['TNM wg mnie'].str.extract(r'T(\d+[a-bx]?)')
         self.clinical_data['wmN'] = self.clinical_data['TNM wg mnie'].str.extract(r'N(\d+[a-c]?)')
-    
+
 
     def _compute_overstaging_tnm(self, wm_column: str, p_column: str, category_order: dict, result_column: str):
         wm_numeric = self.clinical_data[wm_column].map(category_order)
@@ -182,7 +193,11 @@ class CRCDataset(Dataset):
             range = row[range_column]
             positive = row[value_column]
 
-            if not isinstance(positive, int):
+            if isinstance(positive, str):
+                numbers = re.findall(r'\d+', positive)
+                positive = sum(map(int, numbers))
+
+            elif not isinstance(positive, int):
                 positive = int(positive)
 
             _min, _max = (range if isinstance(range, list) else [range, range])
