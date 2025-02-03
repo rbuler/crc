@@ -4,6 +4,7 @@ import torch
 import logging
 import numpy as np
 import pandas as pd
+from collections import defaultdict
 from radiomics import setVerbosity
 from dataset import CRCDataset
 from warnings import simplefilter
@@ -81,14 +82,34 @@ if __name__ == '__main__':
 
     # sorted by patient_id
     new_df = subset.merge(df, how='inner', on='patient_id')
+    
     binary_labels = new_df[new_df.columns[3]]
     multi_labels = new_df[new_df.columns[1]]
     features = new_df[new_df.columns[5:]]
     # split using the same seed
+    
+    def generate_mil_bags(df, patient_col='patient_id',
+                          feature_cols=None,
+                          instance_label_col='class_label',
+                          bag_label_col='bag_label'):
+        
+        if feature_cols is None:
+            feature_cols = [col for col in df.columns if col not in {patient_col, instance_label_col, bag_label_col}]
+        
+        bags = defaultdict(lambda: {'instances': [], 'instance_labels': [], 'bag_label': None})
+        
+        for _, row in df.iterrows():
+            patient_id = row[patient_col]
+            feature_vector = row[feature_cols].tolist()
+            instance_label = row[instance_label_col]
+            bag_label = row[bag_label_col]
+            
+            bags[patient_id]['instances'].append(feature_vector)
+            bags[patient_id]['instance_labels'].append(instance_label)
+            bags[patient_id]['bag_label'] = bag_label  # Ensures consistent bag label for each patient
+        
+        return dict(bags)
 
+    bags = generate_mil_bags(new_df, patient_col='patient_id', feature_cols=features.columns, instance_label_col='class_name', bag_label_col='wmN')
 
-    ## Example classification using XGBoost
-    # classifier = Classifier(X, y, patient_ids.values, classifier_name='XGBoost')
-    # classifier.train_classifier()
 # %%
-
