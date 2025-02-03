@@ -1,16 +1,14 @@
-import torch
-import numpy as np
 import yaml
-import logging
 import utils
+import torch
+import logging
+import numpy as np
+import pandas as pd
 from radiomics import setVerbosity
 from dataset import CRCDataset
-from reduce_dim_features import plot_reduced_dim
-# from classifiers import Classifier
-import pandas as pd
 from warnings import simplefilter
+
 simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
-# from utils import view_slices
 
 logger = logging.getLogger(__name__)
 logger_radiomics = logging.getLogger("radiomics")
@@ -35,50 +33,62 @@ torch.cuda.manual_seed(seed)
 if __name__ == '__main__':
     
     root = config['dir']['root']
-    dataset = CRCDataset(root, clinical_data=config['dir']['clinical_data'], transform=None,
+    clinical_data = config['dir']['clinical_data']
+    dataset = CRCDataset(root,
+                         clinical_data=clinical_data,
+                         config=config,
+                         transform=None,
                          save_new_masks=False)
-
-
-    dataset.clinical_data = dataset.clinical_data[config['clinical_data_attributes'].keys()]
-    dataset.clinical_data.dropna(subset=['Nr pacjenta'], inplace=True)
-
-    for column, dtype in config['clinical_data_attributes'].items():
-        dataset.clinical_data[column] = dataset.clinical_data[column].astype(dtype)
     
-    dataset.clinical_data = dataset.clinical_data.reset_index(drop=True)
-
-
+    selected_classes = ['lymph_node_positive', 'lymph_node_negative']
     
-    ## x = reduce_dim  TODO add return value
-
-    comparison_pairs = {
-        'colon': [1, 4],
-        'node': [2, 5],
-        'fat': [3, 6], 
-        'all': [1, 2, 3, 4, 5, 6]
-    }
-    comparison_type = 'node'
-
-    radiomic_features = dataset.radiomic_features[dataset.radiomic_features.columns[4:]]
-    labels = dataset.radiomic_features[dataset.radiomic_features.columns[:4]]
-    labels_for_comparison = labels[labels['class_label'].isin(comparison_pairs[comparison_type])].reset_index(drop=True)
+    df = dataset.radiomic_features[dataset.radiomic_features['class_name'].isin(selected_classes)]
+    df['patient_id'] = df['patient_id'].astype(int)
+    df = df.sort_values(by='patient_id').reset_index(drop=True)
     
-    plot_reduced_dim(radiomic_features, labels_for_comparison['class_name'])
+    counts_per_patient = df.groupby('patient_id')['class_name'].value_counts()
     
+    for patient_id, class_counts in counts_per_patient.groupby(level=0):
+        counts_str = ", ".join([f"{class_name}: {count}" for class_name, count in class_counts.items()])
+        for class_name, count in class_counts.items():
+            dataset.clinical_data.loc[dataset.clinical_data['Nr pacjenta'] == patient_id, class_name[1]] = count
+    
+    dataset.clinical_data[
+        ['lymph_node_positive', 'lymph_node_negative']] = dataset.clinical_data[
+            ['lymph_node_positive', 'lymph_node_negative']].fillna(0).astype(int)
+    dataset.update_clinical_data()
+
+    # columns_to_select = ["Nr pacjenta", "wmN", "pN", "lymph_node_positive", "lymph_node_negative", "wmNlymph_node_positive_overnoding", "pNlymph_node_positive_overnoding",
+    #                      "Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane",
+    #                      "wmNLiczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane_overnoding"]
+    columns_to_select = ["Nr pacjenta", "wmN"]
+    subset = dataset.clinical_data[columns_to_select]
+    subset.rename(columns={"Nr pacjenta": "patient_id"}, inplace=True)
+
+    # select only patients that have already have images
+    ids = []
+    for i in range(len(dataset)):
+        ids.append(int(dataset.get_patient_id(i)))
+    subset = subset[subset['patient_id'].isin(ids)]
+
+    # bad quality/invalid annotations
+    temp_to_drop = [140, 139, 138, 136, 132, 129, 128, 123, 120, 115, 113, 110, 108, 107, 102, 101, 99, 98,
+                    96, 88, 86, 75, 70, 61, 49, 48, 37, 26, 21, 8, 3, 2]
+    subset = subset[~subset['patient_id'].isin(temp_to_drop)]
+
+
+
+
+    # sorted by patient_id
+    new_df = subset.merge(df, how='inner', on='patient_id')
+    binary_labels = new_df[new_df.columns[3]]
+    multi_labels = new_df[new_df.columns[1]]
+    features = new_df[new_df.columns[5:]]
+    # split using the same seed
+
+
     ## Example classification using XGBoost
-    # data = radiomic_features
-    # filtered_data = data[data['class_name'].isin(['lymph_node_positive', 'lymph_node_negative'])]
-    # filtered_data['class_name'] = filtered_data['class_name'].map({'lymph_node_positive': 1, 'lymph_node_negative': 0})
-    # y = filtered_data['class_name']
-    # X = filtered_data.drop(columns=['class_label', 'patient_id', 'instance_label', 'class_name'])
-    # patient_ids = filtered_data['patient_id']
-    # X = X.values
-    # y = y.values
     # classifier = Classifier(X, y, patient_ids.values, classifier_name='XGBoost')
     # classifier.train_classifier()
-    
-    # try:
-    #     view_slices(img, mask, title='3D Mask Slices')
-    # except Exception as e:
-    #     print(e)
 # %%
+
