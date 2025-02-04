@@ -1,22 +1,38 @@
 import yaml
 import utils
 import torch
+import torch.nn as nn
 import logging
 import numpy as np
-import pandas as pd
-from collections import defaultdict
-from radiomics import setVerbosity
 from dataset import CRCDataset
-from warnings import simplefilter
-
-simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
+from utils import generate_mil_bags, summarize_bags
+from torch.utils.data import DataLoader
 
 logger = logging.getLogger(__name__)
 logger_radiomics = logging.getLogger("radiomics")
-setVerbosity(30)
+logging.basicConfig(level=logging.ERROR)
 
-logger = logging.getLogger("radiomics.glcm")
-logger.setLevel(logging.ERROR)
+class MILNetwork(nn.Module):
+    def __init__(self, input_dim, hidden_dim):
+        super(MILNetwork, self).__init__()
+        
+        self.instance_encoder = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU())
+        
+        self.aggregation = lambda x: torch.max(x, dim=1)[0]
+        self.classifier = nn.Sequential(nn.Linear(hidden_dim, 1), nn.Sigmoid())
+
+    def forward(self, bag):
+        b, i, f = bag.size()
+        bag = bag.view(b * i, f)
+        x = self.instance_encoder(bag)
+        x = x.view(b, i, -1)
+        x = self.aggregation(x)
+        x = self.classifier(x)
+        return x.squeeze(1)
 
 
 # MAKE PARSER AND LOAD PARAMS FROM CONFIG FILE--------------------------------
@@ -70,46 +86,64 @@ if __name__ == '__main__':
     ids = []
     for i in range(len(dataset)):
         ids.append(int(dataset.get_patient_id(i)))
-    subset = subset[subset['patient_id'].isin(ids)]
-
     # bad quality/invalid annotations
     temp_to_drop = [140, 139, 138, 136, 132, 129, 128, 123, 120, 115, 113, 110, 108, 107, 102, 101, 99, 98,
                     96, 88, 86, 75, 70, 61, 49, 48, 37, 26, 21, 8, 3, 2]
-    subset = subset[~subset['patient_id'].isin(temp_to_drop)]
-
-
-
+    
+    ids = list(set(ids) - set(temp_to_drop))
+    subset = subset[subset['patient_id'].isin(ids)]
 
     # sorted by patient_id
     new_df = subset.merge(df, how='inner', on='patient_id')
     
+    np.random.seed(1)
+    ids = np.unique(new_df['patient_id'])
+    train_ids = np.random.choice(ids, int(0.7 * len(ids)), replace=False)
+    remaining_ids = np.setdiff1d(ids, train_ids)
+    valid_ids = np.random.choice(remaining_ids, int(0.5 * len(remaining_ids)), replace=False)
+    test_ids = np.setdiff1d(remaining_ids, valid_ids)
+
+
     binary_labels = new_df[new_df.columns[3]]
     multi_labels = new_df[new_df.columns[1]]
     features = new_df[new_df.columns[5:]]
-    # split using the same seed
+    features = torch.tensor(features.values, dtype=torch.float32)
+    # normalize features
+    # TODO 
+    # normalize feature using only training set statistics
+    features = (features - features.mean()) / features.std()
+    #
+    #
+
+    bags = generate_mil_bags(new_df, patient_col='patient_id', features=features, instance_label_col='class_name', bag_label_col='wmN')
+
+    train_bags = {k: v for k, v in bags.items() if k in train_ids}
+    valid_bags = {k: v for k, v in bags.items() if k in valid_ids}
+    test_bags = {k: v for k, v in bags.items() if k in test_ids}  
+
+    train_positive, train_negative = summarize_bags(train_bags)
+    valid_positive, valid_negative = summarize_bags(valid_bags)
+    test_positive, test_negative = summarize_bags(test_bags)
     
-    def generate_mil_bags(df, patient_col='patient_id',
-                          feature_cols=None,
-                          instance_label_col='class_label',
-                          bag_label_col='bag_label'):
-        
-        if feature_cols is None:
-            feature_cols = [col for col in df.columns if col not in {patient_col, instance_label_col, bag_label_col}]
-        
-        bags = defaultdict(lambda: {'instances': [], 'instance_labels': [], 'bag_label': None})
-        
-        for _, row in df.iterrows():
-            patient_id = row[patient_col]
-            feature_vector = row[feature_cols].tolist()
-            instance_label = row[instance_label_col]
-            bag_label = row[bag_label_col]
-            
-            bags[patient_id]['instances'].append(feature_vector)
-            bags[patient_id]['instance_labels'].append(instance_label)
-            bags[patient_id]['bag_label'] = bag_label  # Ensures consistent bag label for each patient
-        
-        return dict(bags)
+    def collate_fn(batch):
+        return batch
 
-    bags = generate_mil_bags(new_df, patient_col='patient_id', feature_cols=features.columns, instance_label_col='class_name', bag_label_col='wmN')
+    train_loader = DataLoader(list(train_bags.values()), batch_size=1, shuffle=True, collate_fn=collate_fn)
+    valid_loader = DataLoader(list(valid_bags.values()), batch_size=1, shuffle=False, collate_fn=collate_fn)
+    test_loader = DataLoader(list(test_bags.values()), batch_size=1, shuffle=False, collate_fn=collate_fn)
 
+    print(f"Training set: {train_positive} positive bags, {train_negative} negative bags")
+    print(f"Validation set: {valid_positive} positive bags, {valid_negative} negative bags")
+    print(f"Test set: {test_positive} positive bags, {test_negative} negative bags")
+
+    print(f"Number of training batches: {len(train_loader)}")
+    print(f"Number of validation batches: {len(valid_loader)}")
+    print(f"Number of test batches: {len(test_loader)}")
+    model = MILNetwork(input_dim=features.size(1), hidden_dim=64)
+    for batch in train_loader:
+        for bag in batch:
+            instances = torch.stack(bag['instances']).unsqueeze(0)  # Add batch dimension
+            bag_label = bag['bag_label']
+            output = model(instances)
+            print(output)
 # %%
