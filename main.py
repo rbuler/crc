@@ -117,9 +117,9 @@ if __name__ == '__main__':
 
     bags = generate_mil_bags(new_df, patient_col='patient_id', features=features, instance_label_col='class_name', bag_label_col='wmN')
 
-    train_bags = {k: v for k, v in bags.items() if k in train_ids}
-    valid_bags = {k: v for k, v in bags.items() if k in valid_ids}
-    test_bags = {k: v for k, v in bags.items() if k in test_ids}  
+    train_bags = [bag for bag in bags if bag['patient_id'] in train_ids]
+    valid_bags = [bag for bag in bags if bag['patient_id'] in valid_ids]
+    test_bags = [bag for bag in bags if bag['patient_id'] in test_ids]
 
     train_positive, train_negative = summarize_bags(train_bags)
     valid_positive, valid_negative = summarize_bags(valid_bags)
@@ -128,9 +128,9 @@ if __name__ == '__main__':
     def collate_fn(batch):
         return batch
 
-    train_loader = DataLoader(list(train_bags.values()), batch_size=1, shuffle=True, collate_fn=collate_fn)
-    valid_loader = DataLoader(list(valid_bags.values()), batch_size=1, shuffle=False, collate_fn=collate_fn)
-    test_loader = DataLoader(list(test_bags.values()), batch_size=1, shuffle=False, collate_fn=collate_fn)
+    train_loader = DataLoader(train_bags, batch_size=1, shuffle=True, collate_fn=collate_fn)
+    valid_loader = DataLoader(valid_bags, batch_size=1, shuffle=False, collate_fn=collate_fn)
+    test_loader = DataLoader(test_bags, batch_size=1, shuffle=False, collate_fn=collate_fn)
 
     print(f"Training set: {train_positive} positive bags, {train_negative} negative bags")
     print(f"Validation set: {valid_positive} positive bags, {valid_negative} negative bags")
