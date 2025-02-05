@@ -4,7 +4,6 @@ import typing
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import defaultdict
 from ipywidgets import interact, IntSlider
 
 
@@ -90,7 +89,7 @@ def generate_mil_bags(df, patient_col='patient_id',
                       instance_label_col='class_label',
                       bag_label_col='bag_label'):
     
-    bags = defaultdict(lambda: {'instances': [], 'instance_labels': [], 'bag_label': None})
+    bags = []
     
     for idx, row in df.iterrows():
         patient_id = row[patient_col]
@@ -98,16 +97,22 @@ def generate_mil_bags(df, patient_col='patient_id',
         instance_label = row[instance_label_col]
         bag_label = row[bag_label_col]
         
-        bags[patient_id]['instances'].append(feature_vector)
-        bags[patient_id]['instance_labels'].append(instance_label)
+        # Find the bag for the current patient_id or create a new one
+        bag = next((b for b in bags if b['patient_id'] == patient_id), None)
+        if bag is None:
+            bag = {'patient_id': patient_id, 'instances': [], 'instance_labels': [], 'bag_label': None}
+            bags.append(bag)
+        
+        bag['instances'].append(feature_vector)
+        bag['instance_labels'].append(instance_label)
         
         # Set bag label to 0 if bag_label is 0, otherwise set to 1
         if bag_label == 0 or bag_label == '0':
-            bags[patient_id]['bag_label'] = torch.tensor(0, dtype=torch.long)
+            bag['bag_label'] = torch.tensor(0, dtype=torch.long)
         else:
-            bags[patient_id]['bag_label'] = torch.tensor(1, dtype=torch.long)
+            bag['bag_label'] = torch.tensor(1, dtype=torch.long)
     
-    return dict(bags)
+    return bags
 
     # TODO: Add multiclass label mapping
     # 0 -> 0
@@ -118,6 +123,6 @@ def generate_mil_bags(df, patient_col='patient_id',
 
 
 def summarize_bags(bags):
-        positive_bags = sum(1 for patient_id in bags if bags[patient_id]['bag_label'])
-        negative_bags = sum(1 for patient_id in bags if bags[patient_id]['bag_label'])
-        return positive_bags, negative_bags
+    positive_bags = sum(1 for bag in bags if bag['bag_label'] == 1)
+    negative_bags = sum(1 for bag in bags if bag['bag_label'] == 0)
+    return positive_bags, negative_bags
