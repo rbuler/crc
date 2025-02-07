@@ -31,16 +31,13 @@ clinical_data_attributes: # selected most useful attributes from clinical data
   N: str
   M 2: str
   M: str
-<<<<<<< Updated upstream
   
-=======
   TNM wg mnie: str
   Diagnoza: str
   # Zaznaczona Tk tłuszczoa 0-nie 1-tak 3-zaznaczona ale niezmieniona: str
   Zaznaczona Tk tłuszczoa 1-tak 2-zaznaczona ale niezmieniona: str
   # Zdrowe jelito lokalizacja: str
   # Liczba zaznaczonych ww chłonnych: str
->>>>>>> Stashed changes
   Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane: str
   liczba węzłów w preparacie: str
   liczba węzłów przerzutowych: str
