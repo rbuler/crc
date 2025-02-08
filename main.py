@@ -1,12 +1,17 @@
 import yaml
 import utils
 import torch
-import torch.nn as nn
 import logging
 import numpy as np
+import pandas as pd
+import torch.nn as nn
+from sklearn import linear_model
+from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader
+from reduce_dim_features import icc_select_reproducible
+from reduce_dim_features import select_best_from_clusters
 from dataset import CRCDataset
 from utils import generate_mil_bags, summarize_bags
-from torch.utils.data import DataLoader
 
 logger = logging.getLogger(__name__)
 logger_radiomics = logging.getLogger("radiomics")
@@ -26,10 +31,10 @@ class MILNetwork(nn.Module):
         self.classifier = nn.Sequential(nn.Linear(hidden_dim, 1), nn.Sigmoid())
 
     def forward(self, bag):
-        b, i, f = bag.size()
-        bag = bag.view(b * i, f)
+        b, n, feats = bag.size()  # batch size, number of instances, number of features
+        bag = bag.view(b * n, feats)
         x = self.instance_encoder(bag)
-        x = x.view(b, i, -1)
+        x = x.view(b, n, -1)
         x = self.aggregation(x)
         x = self.classifier(x)
         return x.squeeze(1)
@@ -104,16 +109,56 @@ if __name__ == '__main__':
     test_ids = np.setdiff1d(remaining_ids, valid_ids)
 
 
-    binary_labels = new_df[new_df.columns[3]]
+    binary_labels = new_df[new_df.columns[3]].map({'lymph_node_negative': 0, 'lymph_node_positive': 1})
+    
     multi_labels = new_df[new_df.columns[1]]
     features = new_df[new_df.columns[5:]]
-    features = torch.tensor(features.values, dtype=torch.float32)
+
     # normalize features
     # TODO 
     # normalize feature using only training set statistics
     features = (features - features.mean()) / features.std()
     #
     #
+
+    # Step 1: Exclusion of nonreproducible features (in case of multiple bin widths)
+    if config['radiomics']['multiple_binWidth']['if_multi']:
+        bin_widths = config['radiomics']['multiple_binWidth']['binWidths']
+        selected_features_icc = icc_select_reproducible(features=features,
+                                                        labels=binary_labels,
+                                                        threshold=0.75,
+                                                        bin_widths=bin_widths)
+        reproducible_features = features[selected_features_icc]
+    else:
+        reproducible_features = features
+    logger.info(f"{reproducible_features.shape=}")
+
+    # Step 2: Selection of the most relevant variables for the respective task
+    features_prior_to_selection = reproducible_features.loc[:, reproducible_features.nunique() > 1]
+    logger.info(f"Removing columns with uninformative values (single unique value):\n\t{features_prior_to_selection.shape=}")
+    features_prior_to_selection = features_prior_to_selection.T.drop_duplicates().T
+    logger.info(f"Removing duplicate columns:\n\t{features_prior_to_selection.shape=}")
+    scaler = StandardScaler()
+    features_scaled = scaler.fit_transform(features_prior_to_selection)
+    scaled_df = pd.DataFrame(features_scaled, columns=features_prior_to_selection.columns)
+
+    lasso_cv = linear_model.LassoCV(cv=5,
+                                    random_state=config['seed'])
+    lasso_cv.fit(features_scaled, binary_labels)
+    best_alpha = lasso_cv.alpha_
+    logger.info(f"Best alpha: {best_alpha}")
+    lasso_coefficients_cv = lasso_cv.coef_
+    selected_features_cv_names = features_prior_to_selection.columns[lasso_coefficients_cv != 0]
+    selected_features_df = scaled_df[selected_features_cv_names]
+
+    # Step 3: Selection of most representative features for each cluster
+    features = select_best_from_clusters(features=selected_features_df,
+                                   n_clusters=10,
+                                   num_features=10,
+                                   random_state=config['seed'])
+    features = torch.tensor(features.values, dtype=torch.float32)
+    binary_labels = torch.tensor(binary_labels.values, dtype=torch.long)
+
 
     bags = generate_mil_bags(new_df, patient_col='patient_id', features=features, instance_label_col='class_name', bag_label_col='wmN')
 
@@ -140,10 +185,10 @@ if __name__ == '__main__':
     print(f"Number of validation batches: {len(valid_loader)}")
     print(f"Number of test batches: {len(test_loader)}")
     model = MILNetwork(input_dim=features.size(1), hidden_dim=64)
-    for batch in train_loader:
-        for bag in batch:
-            instances = torch.stack(bag['instances']).unsqueeze(0)  # Add batch dimension
-            bag_label = bag['bag_label']
-            output = model(instances)
-            print(output)
+    # for batch in train_loader:
+    #     for bag in batch:
+    #         instances = torch.stack(bag['instances']).unsqueeze(0)  # Add batch dimension
+    #         bag_label = bag['bag_label']
+    #         output = model(instances)
+    #         print(output)
 # %%
