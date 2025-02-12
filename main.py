@@ -37,7 +37,51 @@ class MILNetwork(nn.Module):
         x = x.view(b, n, -1)
         x = self.aggregation(x)
         x = self.classifier(x)
-        return x.squeeze(1)
+        return x
+
+
+def train_net(model, criterion, optimizer, train_loader, valid_loader, num_epochs=10):   
+    for epoch in range(num_epochs):
+        corrects = 0
+        epoch_loss = 0
+        model.train()
+        for batch in train_loader:
+            for bag in batch:
+                optimizer.zero_grad()
+                instances = torch.stack(bag['instances']).unsqueeze(0)
+                bag_label = torch.tensor(bag['bag_label'], dtype=torch.float32)
+
+                output = model(instances)
+                loss = criterion(output[0], bag_label)
+                loss.backward()
+                optimizer.step()
+
+        epoch_loss += loss.item()
+        preds = (output > 0.5).float()
+        corrects += preds == bag_label.item()
+
+        print(f"Epoch {epoch+1}, loss: {epoch_loss/len(train_loader)}, correct preds: {corrects}/{len(train_loader)}")
+
+        # Validation loop
+        model.eval()
+        val_corrects = 0
+        val_loss = 0
+        with torch.no_grad():
+            for batch in valid_loader:
+                for bag in batch:
+                    instances = torch.stack(bag['instances']).unsqueeze(0)
+                    bag_label = torch.tensor(bag['bag_label'], dtype=torch.float32)
+
+                    output = model(instances)
+                    loss = criterion(output[0], bag_label)
+
+                    val_loss += loss.item()
+                    preds = (output > 0.5).float()
+                    val_corrects += preds == bag_label.item()
+            print(f"Validation loss: {val_loss/len(valid_loader)}, correct preds: {val_corrects}/{len(valid_loader)}")
+    return model
+
+
 
 
 # MAKE PARSER AND LOAD PARAMS FROM CONFIG FILE--------------------------------
@@ -121,7 +165,7 @@ if __name__ == '__main__':
     #
     #
 
-    # Step 1: Exclusion of nonreproducible features (in case of multiple bin widths)
+    # exclusion of nonreproducible features (in case of multiple bin widths)
     if config['radiomics']['multiple_binWidth']['if_multi']:
         bin_widths = config['radiomics']['multiple_binWidth']['binWidths']
         selected_features_icc = icc_select_reproducible(features=features,
@@ -133,7 +177,7 @@ if __name__ == '__main__':
         reproducible_features = features
     logger.info(f"{reproducible_features.shape=}")
 
-    # Step 2: Selection of the most relevant variables for the respective task
+    # selection of the most relevant features using LassoCV
     features_prior_to_selection = reproducible_features.loc[:, reproducible_features.nunique() > 1]
     logger.info(f"Removing columns with uninformative values (single unique value):\n\t{features_prior_to_selection.shape=}")
     features_prior_to_selection = features_prior_to_selection.T.drop_duplicates().T
@@ -151,7 +195,7 @@ if __name__ == '__main__':
     selected_features_cv_names = features_prior_to_selection.columns[lasso_coefficients_cv != 0]
     selected_features_df = scaled_df[selected_features_cv_names]
 
-    # Step 3: Selection of most representative features for each cluster
+    # selection of most representative features for each cluster
     features = select_best_from_clusters(features=selected_features_df,
                                    n_clusters=10,
                                    num_features=10,
@@ -159,6 +203,7 @@ if __name__ == '__main__':
     features = torch.tensor(features.values, dtype=torch.float32)
     binary_labels = torch.tensor(binary_labels.values, dtype=torch.long)
 
+ # %%
 
     bags = generate_mil_bags(new_df, patient_col='patient_id', features=features, instance_label_col='class_name', bag_label_col='wmN')
 
@@ -184,8 +229,21 @@ if __name__ == '__main__':
     print(f"Number of training batches: {len(train_loader)}")
     print(f"Number of validation batches: {len(valid_loader)}")
     print(f"Number of test batches: {len(test_loader)}")
-    model = MILNetwork(input_dim=features.size(1), hidden_dim=64)
+
+    model = MILNetwork(input_dim=features.size(1), hidden_dim=10)
+    criterion = nn.BCELoss()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
+    model = train_net(model=model,
+                      criterion=criterion,
+                      optimizer=optimizer,
+                      train_loader=train_loader,
+                      valid_loader=valid_loader,
+                      num_epochs=200)
+    
+    
+
     # for batch in train_loader:
+
     #     for bag in batch:
     #         instances = torch.stack(bag['instances']).unsqueeze(0)  # Add batch dimension
     #         bag_label = bag['bag_label']
