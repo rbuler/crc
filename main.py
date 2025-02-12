@@ -206,16 +206,7 @@ if __name__ == '__main__':
     # sorted by patient_id
     new_df = subset.merge(df, how='inner', on='patient_id')
     
-    np.random.seed(1)
-    ids = np.unique(new_df['patient_id'])
-    train_ids = np.random.choice(ids, int(0.7 * len(ids)), replace=False)
-    remaining_ids = np.setdiff1d(ids, train_ids)
-    valid_ids = np.random.choice(remaining_ids, int(0.5 * len(remaining_ids)), replace=False)
-    test_ids = np.setdiff1d(remaining_ids, valid_ids)
-
-
     binary_labels = new_df[new_df.columns[3]].map({'lymph_node_negative': 0, 'lymph_node_positive': 1})
-    
     multi_labels = new_df[new_df.columns[1]]
     features = new_df[new_df.columns[5:]]
 
@@ -225,7 +216,6 @@ if __name__ == '__main__':
     features = (features - features.mean()) / features.std()
     #
     #
-
     # exclusion of nonreproducible features (in case of multiple bin widths)
     if config['radiomics']['multiple_binWidth']['if_multi']:
         bin_widths = config['radiomics']['multiple_binWidth']['binWidths']
@@ -246,9 +236,7 @@ if __name__ == '__main__':
     scaler = StandardScaler()
     features_scaled = scaler.fit_transform(features_prior_to_selection)
     scaled_df = pd.DataFrame(features_scaled, columns=features_prior_to_selection.columns)
-
-    lasso_cv = linear_model.LassoCV(cv=5,
-                                    random_state=config['seed'])
+    lasso_cv = linear_model.LassoCV(cv=5, random_state=config['seed'])
     lasso_cv.fit(features_scaled, binary_labels)
     best_alpha = lasso_cv.alpha_
     logger.info(f"Best alpha: {best_alpha}")
@@ -268,6 +256,14 @@ if __name__ == '__main__':
     binary_labels = torch.tensor(binary_labels.values, dtype=torch.long)
 
     bags = generate_mil_bags(new_df, patient_col='patient_id', features=features, instance_label_col='class_name', bag_label_col='wmN')
+
+
+    np.random.seed(1)
+    ids = np.unique(new_df['patient_id'])
+    train_ids = np.random.choice(ids, int(0.7 * len(ids)), replace=False)
+    remaining_ids = np.setdiff1d(ids, train_ids)
+    valid_ids = np.random.choice(remaining_ids, int(0.5 * len(remaining_ids)), replace=False)
+    test_ids = np.setdiff1d(remaining_ids, valid_ids)
 
     train_bags = [bag for bag in bags if bag['patient_id'] in train_ids]
     valid_bags = [bag for bag in bags if bag['patient_id'] in valid_ids]
