@@ -4,7 +4,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+# from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import warnings
 from typing import List
 from sklearn.cluster import KMeans
@@ -23,7 +23,6 @@ def plot_reduced_dim(features, labels):
 def icc_select_reproducible(features: pd.DataFrame,
                             labels: pd.DataFrame,
                             threshold: float,
-                         comparison_type: str,
                             bin_widths: List[int]) -> pd.Series:
     """
     Selects reproducible features based on Intraclass Correlation Coefficient (ICC).
@@ -45,22 +44,11 @@ def icc_select_reproducible(features: pd.DataFrame,
         The function filters features based on their reproducibility across different bin widths.
         Features with ICC values greater than the specified threshold (e.g. 0.75) are considered reproducible.
     """
-    comparison_pairs = {
-        'colon': [1, 4],
-        'node': [2, 5],
-        'fat': [3, 6], 
-        'all': [1, 2, 3, 4, 5, 6]
-    }
-    
-    if comparison_type not in comparison_pairs:
-        raise ValueError("Invalid comparison type. Choose from 'fat', 'node', 'colon' and 'all'.")
 
     assert len(bin_widths) == 2, "Only two bin widths are supported yet."
     
     data = features.copy()
     print("Data shape:", data.shape)
-    class_labels = comparison_pairs[comparison_type]
-    data = data[labels['class_label'].isin(class_labels)]
     print("Data shape for comparison:", data.shape)
     feature_names = list(set(col.split('_binWidth')[0] for col in data.columns if 'binWidth' in col))
     data['subject'] = range(len(data))
