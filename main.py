@@ -307,8 +307,16 @@ if __name__ == '__main__':
 
     
     metrics, conf_matrix = test_net(model, test_loader)
-    print(f"Test set metrics: {metrics}")
-    print(f"Confusion matrix:\n{conf_matrix}")
-
+    for metric, value in metrics.items():
+        print(f"{metric}: {value:.2f}")
+    
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues", cbar=False, 
+                xticklabels=["Negative", "Positive"], 
+                yticklabels=["Negative", "Positive"])
+    plt.xlabel("Predicted Label")
+    plt.ylabel("True Label")
+    plt.title("Confusion Matrix")
+    plt.show()
 
 # %%
