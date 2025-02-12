@@ -158,7 +158,7 @@ if __name__ == '__main__':
     cm = confusion_matrix(y_true, y_pred, labels=labels)
 
     plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=labels_with_N, yticklabels=labels)
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=labels_with_N, yticklabels=labels_with_N)
     plt.xlabel("Radiologist")
     plt.ylabel("Pathological")
     plt.title("Node Staging: Radiologist vs. Pathological")
@@ -166,13 +166,12 @@ if __name__ == '__main__':
     plt.gca().yaxis.set_ticks_position('none')
     plt.gca().xaxis.set_ticks_position('none')
     hatch_patterns = {
-        'overstaging': "/",  # Diagonal hatching
-        'understaging': "\\"  # Backward diagonal hatching
+        'overstaging': "/",
+        'understaging': "\\"
     }
 
-    ax = plt.gca()  # Get current axis
-
-    num_labels = len(labels)  # Number of classes
+    ax = plt.gca()
+    num_labels = len(labels)
 
     for i in range(num_labels):
         for j in range(num_labels):
