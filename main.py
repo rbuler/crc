@@ -5,9 +5,13 @@ import logging
 import numpy as np
 import pandas as pd
 import torch.nn as nn
+import seaborn as sns
+import matplotlib.pyplot as plt
 from sklearn import linear_model
-from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, precision_score
+from sklearn.metrics import recall_score, f1_score, confusion_matrix
 from reduce_dim_features import icc_select_reproducible
 from reduce_dim_features import select_best_from_clusters
 from dataset import CRCDataset
@@ -40,7 +44,9 @@ class MILNetwork(nn.Module):
         return x
 
 
-def train_net(model, criterion, optimizer, train_loader, valid_loader, num_epochs=10):   
+def train_net(model, criterion, optimizer, train_loader, valid_loader, num_epochs=10):
+    history = {'epoch': [], 'train_acc': [], 'val_acc': [], 'train_loss': [], 'val_loss': []}
+    
     for epoch in range(num_epochs):
         corrects = 0
         epoch_loss = 0
@@ -56,13 +62,15 @@ def train_net(model, criterion, optimizer, train_loader, valid_loader, num_epoch
                 loss.backward()
                 optimizer.step()
 
-        epoch_loss += loss.item()
-        preds = (output > 0.5).float()
-        corrects += preds == bag_label.item()
+                epoch_loss += loss.item()
+                preds = (output > 0.5).float()
+                corrects += (preds == bag_label.item()).sum().item()
 
-        print(f"Epoch {epoch+1}, loss: {epoch_loss/len(train_loader)}, correct preds: {corrects}/{len(train_loader)}")
+        train_loss = epoch_loss / len(train_loader)
+        train_acc = corrects / len(train_loader)
+        print(f"Epoch {epoch+1}, loss: {train_loss}, correct preds: {corrects}/{len(train_loader)}")
 
-        # Validation loop
+        # val loop
         model.eval()
         val_corrects = 0
         val_loss = 0
@@ -77,9 +85,52 @@ def train_net(model, criterion, optimizer, train_loader, valid_loader, num_epoch
 
                     val_loss += loss.item()
                     preds = (output > 0.5).float()
-                    val_corrects += preds == bag_label.item()
-            print(f"Validation loss: {val_loss/len(valid_loader)}, correct preds: {val_corrects}/{len(valid_loader)}")
-    return model
+                    val_corrects += (preds == bag_label.item()).sum().item()
+        
+        val_loss /= len(valid_loader)
+        val_acc = val_corrects / len(valid_loader)
+        print(f"Validation loss: {val_loss}, correct preds: {val_corrects}/{len(valid_loader)}")
+
+        history['epoch'].append(epoch + 1)
+        history['train_acc'].append(train_acc)
+        history['val_acc'].append(val_acc)
+        history['train_loss'].append(train_loss)
+        history['val_loss'].append(val_loss)
+
+    return model, history
+
+
+def test_net(model, test_loader):
+    model.eval()
+    all_preds = []
+    all_labels = []
+
+    with torch.no_grad():
+        for batch in test_loader:
+            for bag in batch:
+                instances = torch.stack(bag['instances']).unsqueeze(0)
+                bag_label = bag['bag_label']
+
+                output = model(instances)
+                preds = (output > 0.5).float().item()
+                
+                all_preds.append(preds)
+                all_labels.append(bag_label.item())
+
+    all_preds = np.array(all_preds)
+    all_labels = np.array(all_labels)
+
+    metrics = {
+        "accuracy": accuracy_score(all_labels, all_preds),
+        "precision": precision_score(all_labels, all_preds, zero_division=0),
+        "recall": recall_score(all_labels, all_preds, zero_division=0),
+        "f1_score": f1_score(all_labels, all_preds, zero_division=0),
+    }
+
+    conf_matrix = confusion_matrix(all_labels, all_preds)
+
+
+    return metrics, conf_matrix
 
 
 
@@ -197,13 +248,11 @@ if __name__ == '__main__':
 
     # selection of most representative features for each cluster
     features = select_best_from_clusters(features=selected_features_df,
-                                   n_clusters=10,
-                                   num_features=10,
+                                   n_clusters=1,
+                                   num_features=selected_features_df.shape[1],  # temporary solution !!!
                                    random_state=config['seed'])
     features = torch.tensor(features.values, dtype=torch.float32)
     binary_labels = torch.tensor(binary_labels.values, dtype=torch.long)
-
- # %%
 
     bags = generate_mil_bags(new_df, patient_col='patient_id', features=features, instance_label_col='class_name', bag_label_col='wmN')
 
@@ -230,23 +279,36 @@ if __name__ == '__main__':
     print(f"Number of validation batches: {len(valid_loader)}")
     print(f"Number of test batches: {len(test_loader)}")
 
-    model = MILNetwork(input_dim=features.size(1), hidden_dim=10)
+    model = MILNetwork(input_dim=features.size(1), hidden_dim=64)
     criterion = nn.BCELoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
-    model = train_net(model=model,
-                      criterion=criterion,
-                      optimizer=optimizer,
-                      train_loader=train_loader,
-                      valid_loader=valid_loader,
-                      num_epochs=200)
-    
-    
+    model, history = train_net(model=model,
+                               criterion=criterion,
+                               optimizer=optimizer,
+                               train_loader=train_loader,
+                               valid_loader=valid_loader,
+                               num_epochs=1000)
+            
+    sns.set_style(style="whitegrid")
 
-    # for batch in train_loader:
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    sns.lineplot(x=history["epoch"], y=history["train_acc"], label="Train Accuracy", ax=axes[0])
+    sns.lineplot(x=history["epoch"], y=history["val_acc"], label="Validation Accuracy", ax=axes[0])
+    axes[0].set_title("Accuracy Comparison")
+    axes[0].set_xlabel("Epoch")
+    axes[0].set_ylabel("Accuracy")
+    sns.lineplot(x=history["epoch"], y=history["train_loss"], label="Train Loss", ax=axes[1])
+    sns.lineplot(x=history["epoch"], y=history["val_loss"], label="Validation Loss", ax=axes[1])
+    axes[1].set_title("Loss Comparison")
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylabel("Loss")
+    plt.tight_layout()
+    plt.show()
 
-    #     for bag in batch:
-    #         instances = torch.stack(bag['instances']).unsqueeze(0)  # Add batch dimension
-    #         bag_label = bag['bag_label']
-    #         output = model(instances)
-    #         print(output)
+    
+    metrics, conf_matrix = test_net(model, test_loader)
+    print(f"Test set metrics: {metrics}")
+    print(f"Confusion matrix:\n{conf_matrix}")
+
+
 # %%
