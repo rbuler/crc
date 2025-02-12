@@ -167,6 +167,9 @@ if __name__ == '__main__':
     plt.title('Distribution of wmT')
     plt.xlabel('wmT')
     plt.ylabel('Count')
+    wmT_order = sorted(subset['wmT'].unique())
+    plt.xticks(ticks=range(len(wmT_order)), labels=wmT_order)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
     plt.show()
 
     plt.figure(figsize=(10, 6))
@@ -174,4 +177,7 @@ if __name__ == '__main__':
     plt.title('Distribution of wmN')
     plt.xlabel('wmN')
     plt.ylabel('Count')
+    wmN_order = sorted(subset['wmN'].unique())
+    plt.xticks(ticks=range(len(wmN_order)), labels=wmN_order)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
     plt.show()
