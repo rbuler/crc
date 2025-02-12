@@ -32,8 +32,6 @@ clinical_data_attributes: # selected most useful attributes from clinical data
   M 2: str
   M: str
   
-  TNM wg mnie: str
-  Diagnoza: str
   # Zaznaczona Tk tłuszczoa 0-nie 1-tak 3-zaznaczona ale niezmieniona: str
   Zaznaczona Tk tłuszczoa 1-tak 2-zaznaczona ale niezmieniona: str
   # Zdrowe jelito lokalizacja: str
