@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from scipy import stats
 from dataset import CRCDataset
 from sklearn.metrics import confusion_matrix
@@ -24,10 +25,11 @@ np.random.seed(config['seed'])
 
 def perform_statistical_tests(df: pd.DataFrame,
                               col_type: str,
-                              column: str) -> str:
+                              column: str,
+                              group: str) -> str:
     results = {}
     if col_type == 'cat':
-        contingency_table = pd.crosstab(df['N_binary'], df[column])
+        contingency_table = pd.crosstab(df[group], df[column])
         contingency_table_entries = contingency_table.values
         contingency_table_entries_condition = contingency_table_entries > 5
         contingency_table_entries_condition = contingency_table_entries_condition.sum()
@@ -39,8 +41,8 @@ def perform_statistical_tests(df: pd.DataFrame,
         proportions = contingency_table.apply(lambda r: r/r.sum(), axis=1)
         results['proportions'] = f"N-negative: {contingency_table.iloc[0, 1]} ({proportions.iloc[0, 1]*100:.2f}%), N-positive: {contingency_table.iloc[1, 1]} ({proportions.iloc[1, 1]*100:.2f}%) for {contingency_table.columns.values[1]}"
     elif col_type == 'con':
-        group1 = df[df['N_binary'] == "0"][column].astype(float)
-        group2 = df[df['N_binary'] == "1"][column].astype(float)
+        group1 = df[df[group] == "0"][column].astype(float)
+        group2 = df[df[group] == "1"][column].astype(float)
         _, p_normal1 = stats.shapiro(group1)
         _, p_normal2 = stats.shapiro(group2)
         if p_normal1 > 0.05 and p_normal2 > 0.05:
@@ -119,7 +121,7 @@ if __name__ == '__main__':
     subset = dataset.clinical_data
     subset.rename(columns={"Nr pacjenta": "patient_id"}, inplace=True)
     subset["N_binary"] = subset["wmN"].apply(lambda x: "1" if x != "0" else "0")
-    # subset["T_binary"] = subset["wmT"].apply(lambda x: 1 if x != "0" else 0)
+    subset['T_binary'] = subset['wmT'].apply(lambda x: "1" if x != "0" else "0")
 
 
     # select only patients that have already have images
@@ -135,16 +137,14 @@ if __name__ == '__main__':
 
     # sorted by patient_id
     # new_df = subset.merge(df, how='inner', on='patient_id')
-#TODO wmN 0 vs other  ALBO dla T
-    
-    # remove x
+
     subset = subset.dropna()
     for key in columns_to_analyze.keys():
         print(f"Results for {key}:", end=" ")
         if columns_to_analyze[key] == "cat":
             # print(subset[key].value_counts())
             subset.loc[:, key] = subset[key].apply(lambda x: "0" if str(x).lower() in ['x', 'tia'] else x)
-        results = perform_statistical_tests(subset, columns_to_analyze[key], key)
+        results = perform_statistical_tests(subset, columns_to_analyze[key], key, "N_binary")
         if columns_to_analyze[key] == "cat":
             print(subset[key].value_counts())
         print(f"{results}")
@@ -153,31 +153,82 @@ if __name__ == '__main__':
     y_pred = subset['wmN']
 
     labels = sorted(subset['pN'].unique())
+    labels_with_N = [f"N{label}" for label in labels]
+
     cm = confusion_matrix(y_true, y_pred, labels=labels)
 
     plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=labels, yticklabels=labels)
-    plt.xlabel("Radiologist Diagnosis")
-    plt.ylabel("Pathological Diagnosis")
-    plt.title("Radiologist Staging vs. Pathological Staging")
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=labels_with_N, yticklabels=labels)
+    plt.xlabel("Radiologist")
+    plt.ylabel("Pathological")
+    plt.title("Node Staging: Radiologist vs. Pathological")
+    plt.yticks(rotation=0)
+    plt.gca().yaxis.set_ticks_position('none')
+    plt.gca().xaxis.set_ticks_position('none')
+    hatch_patterns = {
+        'overstaging': "/",  # Diagonal hatching
+        'understaging': "\\"  # Backward diagonal hatching
+    }
+
+    ax = plt.gca()  # Get current axis
+
+    num_labels = len(labels)  # Number of classes
+
+    for i in range(num_labels):
+        for j in range(num_labels):
+            if j > i:  # Over-staging (above diagonal)
+                rect = patches.Rectangle((j, i), 1, 1,
+                                         fill=False,
+                                         hatch=hatch_patterns['overstaging'],
+                                         edgecolor='black',
+                                         linewidth=0,
+                                         alpha=0.1)
+                ax.add_patch(rect)
+            elif j < i:  # Under-staging (below diagonal)
+                rect = patches.Rectangle((j, i), 1, 1,
+                                         fill=False,
+                                         hatch=hatch_patterns['understaging'],
+                                         edgecolor='black',
+                                         linewidth=0,
+                                         alpha=0.1)
+                ax.add_patch(rect)
     plt.show()
 
     plt.figure(figsize=(10, 6))
-    sns.countplot(x='wmT', data=subset, palette='viridis')
-    plt.title('Distribution of wmT')
-    plt.xlabel('wmT')
-    plt.ylabel('Count')
     wmT_order = sorted(subset['wmT'].unique())
+    ax = sns.countplot(x='wmT', data=subset, palette='viridis', order=wmT_order)
+    wmT_order = [f"T{label}" for label in wmT_order]
     plt.xticks(ticks=range(len(wmT_order)), labels=wmT_order)
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.xlabel('Tumour Staging')
+    plt.ylabel('', rotation=0)
+    plt.yticks([])
+    sns.despine(top=True, bottom=True, left=True, right=True)
+    plt.gca().yaxis.set_ticks_position('none')
+    plt.gca().xaxis.set_ticks_position('none')
+    total = len(subset)
+    for p in ax.patches:
+        count = int(p.get_height())
+        percentage = 100 * count / total
+        ax.annotate(f'{count} ({percentage:.1f}%)', (p.get_x() + p.get_width() / 2., p.get_height()),
+                    ha='center', va='center', xytext=(0, 9), textcoords='offset points')
     plt.show()
 
     plt.figure(figsize=(10, 6))
-    sns.countplot(x='wmN', data=subset, palette='viridis')
-    plt.title('Distribution of wmN')
-    plt.xlabel('wmN')
-    plt.ylabel('Count')
     wmN_order = sorted(subset['wmN'].unique())
+    ax = sns.countplot(x='wmN', data=subset, palette='viridis', order=wmN_order)
+    wmN_order = [f"N{label}" for label in wmN_order]
+    plt.xlabel('Node Staging')
+    plt.ylabel('', rotation=0)
     plt.xticks(ticks=range(len(wmN_order)), labels=wmN_order)
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.yticks([])
+    sns.despine(top=True, bottom=True, left=True, right=True)
+    plt.gca().yaxis.set_ticks_position('none')
+    plt.gca().xaxis.set_ticks_position('none')
+    for p in ax.patches:
+        count = int(p.get_height())
+        percentage = 100 * count / total
+        ax.annotate(f'{count} ({percentage:.1f}%)', (p.get_x() + p.get_width() / 2., p.get_height()),
+                    ha='center', va='center', xytext=(0, 9), textcoords='offset points')
     plt.show()
+
+# %%
