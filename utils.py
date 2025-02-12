@@ -108,9 +108,9 @@ def generate_mil_bags(df, patient_col='patient_id',
         
         # Set bag label to 0 if bag_label is 0, otherwise set to 1
         if bag_label == 0 or bag_label == '0':
-            bag['bag_label'] = torch.tensor(0, dtype=torch.long)
+            bag['bag_label'] = torch.zeros(1, dtype=torch.float32)
         else:
-            bag['bag_label'] = torch.tensor(1, dtype=torch.long)
+            bag['bag_label'] = torch.ones(1, dtype=torch.float32)
     
     return bags
 
