@@ -44,8 +44,10 @@ class MILNetwork(nn.Module):
         return x
 
 
-def train_net(model, criterion, optimizer, train_loader, valid_loader, num_epochs=10):
+def train_net(model, criterion, optimizer, train_loader, valid_loader, num_epochs=10, patience=10):
     history = {'epoch': [], 'train_acc': [], 'val_acc': [], 'train_loss': [], 'val_loss': []}
+    best_val_loss = float('inf')
+    patience_counter = 0
     
     for epoch in range(num_epochs):
         corrects = 0
@@ -68,7 +70,6 @@ def train_net(model, criterion, optimizer, train_loader, valid_loader, num_epoch
 
         train_loss = epoch_loss / len(train_loader)
         train_acc = corrects / len(train_loader)
-        print(f"Epoch {epoch+1}, loss: {train_loss}, correct preds: {corrects}/{len(train_loader)}")
 
         # val loop
         model.eval()
@@ -89,13 +90,22 @@ def train_net(model, criterion, optimizer, train_loader, valid_loader, num_epoch
         
         val_loss /= len(valid_loader)
         val_acc = val_corrects / len(valid_loader)
-        print(f"Validation loss: {val_loss}, correct preds: {val_corrects}/{len(valid_loader)}")
 
         history['epoch'].append(epoch + 1)
         history['train_acc'].append(train_acc)
         history['val_acc'].append(val_acc)
         history['train_loss'].append(train_loss)
         history['val_loss'].append(val_loss)
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
+        if patience_counter >= patience:
+            print(f"Early stopping at epoch {epoch + 1}")
+            break
 
     return model, history
 
@@ -247,10 +257,13 @@ if __name__ == '__main__':
     selected_features_df = scaled_df[selected_features_cv_names]
 
     # selection of most representative features for each cluster
+    # temporary taking all features selected by LassoCV
+    # keep it in mind
     features = select_best_from_clusters(features=selected_features_df,
                                    n_clusters=1,
-                                   num_features=selected_features_df.shape[1],  # temporary solution !!!
+                                   num_features=selected_features_df.shape[1],  # <---------------------
                                    random_state=config['seed'])
+    logger.info(f"{features.shape=}")
     features = torch.tensor(features.values, dtype=torch.float32)
     binary_labels = torch.tensor(binary_labels.values, dtype=torch.long)
 
@@ -287,10 +300,10 @@ if __name__ == '__main__':
                                optimizer=optimizer,
                                train_loader=train_loader,
                                valid_loader=valid_loader,
-                               num_epochs=1000)
+                               num_epochs=1000,
+                               patience=10)
             
     sns.set_style(style="whitegrid")
-
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     sns.lineplot(x=history["epoch"], y=history["train_acc"], label="Train Accuracy", ax=axes[0])
     sns.lineplot(x=history["epoch"], y=history["val_acc"], label="Validation Accuracy", ax=axes[0])
