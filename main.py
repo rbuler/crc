@@ -9,6 +9,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn import linear_model
 from torch.utils.data import DataLoader
+from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, precision_score
 from sklearn.metrics import recall_score, f1_score, confusion_matrix
@@ -100,6 +101,10 @@ def train_net(model, criterion, optimizer, train_loader, valid_loader, num_epoch
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
+            # store state dict
+            # TODO
+            # return best model
+            # best_model_state = model.state_dict()
         else:
             patience_counter += 1
 
@@ -258,74 +263,110 @@ if __name__ == '__main__':
     bags = generate_mil_bags(new_df, patient_col='patient_id', features=features, instance_label_col='class_name', bag_label_col='wmN')
 
 
-    np.random.seed(1)
-    ids = np.unique(new_df['patient_id'])
-    train_ids = np.random.choice(ids, int(0.7 * len(ids)), replace=False)
-    remaining_ids = np.setdiff1d(ids, train_ids)
-    valid_ids = np.random.choice(remaining_ids, int(0.5 * len(remaining_ids)), replace=False)
-    test_ids = np.setdiff1d(remaining_ids, valid_ids)
+    bag_ids = [bag['patient_id'] for bag in bags]
+    bag_labels = [bag['bag_label'].item() for bag in bags]
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+    # %%
+    all_histories = []
+    all_metrics = []
+    all_conf_matrices = []
 
-    train_bags = [bag for bag in bags if bag['patient_id'] in train_ids]
-    valid_bags = [bag for bag in bags if bag['patient_id'] in valid_ids]
-    test_bags = [bag for bag in bags if bag['patient_id'] in test_ids]
+    for train_index, test_ids in skf.split(bag_ids, bag_labels):
+        sss = StratifiedShuffleSplit(n_splits=1, test_size=0.25, random_state=seed)
+        
+        train_ids = np.array(bag_ids)[train_index]
+        train_labels = np.array(bag_labels)[train_index]
+        _, valid_ids = next(sss.split(train_ids, train_labels))
+        valid_ids = train_ids[valid_ids]
+        train_ids = np.setdiff1d(train_ids, valid_ids)
 
-    train_positive, train_negative = summarize_bags(train_bags)
-    valid_positive, valid_negative = summarize_bags(valid_bags)
-    test_positive, test_negative = summarize_bags(test_bags)
-    
-    def collate_fn(batch):
-        return batch
 
-    train_loader = DataLoader(train_bags, batch_size=1, shuffle=True, collate_fn=collate_fn)
-    valid_loader = DataLoader(valid_bags, batch_size=1, shuffle=False, collate_fn=collate_fn)
-    test_loader = DataLoader(test_bags, batch_size=1, shuffle=False, collate_fn=collate_fn)
+        train_bags = [bag for bag in bags if bag['patient_id'] in train_ids]
+        valid_bags = [bag for bag in bags if bag['patient_id'] in valid_ids]
+        test_bags = [bag for bag in bags if bag['patient_id'] in test_ids]
 
-    print(f"Training set: {train_positive} positive bags, {train_negative} negative bags")
-    print(f"Validation set: {valid_positive} positive bags, {valid_negative} negative bags")
-    print(f"Test set: {test_positive} positive bags, {test_negative} negative bags")
+        train_positive, train_negative = summarize_bags(train_bags)
+        valid_positive, valid_negative = summarize_bags(valid_bags)
+        test_positive, test_negative = summarize_bags(test_bags)
+        
+        def collate_fn(batch):
+            return batch
 
-    print(f"Number of training batches: {len(train_loader)}")
-    print(f"Number of validation batches: {len(valid_loader)}")
-    print(f"Number of test batches: {len(test_loader)}")
+        train_loader = DataLoader(train_bags, batch_size=1, shuffle=True, collate_fn=collate_fn)
+        valid_loader = DataLoader(valid_bags, batch_size=1, shuffle=False, collate_fn=collate_fn)
+        test_loader = DataLoader(test_bags, batch_size=1, shuffle=False, collate_fn=collate_fn)
 
-    model = MILNetwork(input_dim=features.size(1), hidden_dim=64)
-    criterion = nn.BCELoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
-    model, history = train_net(model=model,
-                               criterion=criterion,
-                               optimizer=optimizer,
-                               train_loader=train_loader,
-                               valid_loader=valid_loader,
-                               num_epochs=1000,
-                               patience=10)
-            
+        print(f"Training set: {train_positive} positive bags, {train_negative} negative bags")
+        print(f"Validation set: {valid_positive} positive bags, {valid_negative} negative bags")
+        print(f"Test set: {test_positive} positive bags, {test_negative} negative bags")
+
+        print(f"Number of training batches: {len(train_loader)}")
+        print(f"Number of validation batches: {len(valid_loader)}")
+        print(f"Number of test batches: {len(test_loader)}")
+
+        model = MILNetwork(input_dim=features.size(1), hidden_dim=64)
+        criterion = nn.BCELoss()
+        # optimizer = torch.optim.SGD(model.parameters(), lr=0.0001)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+        model, history = train_net(model=model,
+                                criterion=criterion,
+                                optimizer=optimizer,
+                                train_loader=train_loader,
+                                valid_loader=valid_loader,
+                                num_epochs=4000,
+                                patience=5)
+        
+        all_histories.append(history)
+        metrics, conf_matrix = test_net(model, test_loader)
+        all_metrics.append(metrics)
+        all_conf_matrices.append(conf_matrix)
+        print()
+
+    # Aggregate histories, metrics, and confusion matrices
+    aggregated_history = {
+        'epoch': [],
+        'train_acc': [],
+        'val_acc': [],
+        'train_loss': [],
+        'val_loss': []
+    }
+    for key in aggregated_history.keys():
+        for history in all_histories:
+            aggregated_history[key].extend(history[key])
+
+    aggregated_metrics = {
+        'accuracy': np.mean([m['accuracy'] for m in all_metrics]),
+        'precision': np.mean([m['precision'] for m in all_metrics]),
+        'recall': np.mean([m['recall'] for m in all_metrics]),
+        'f1_score': np.mean([m['f1_score'] for m in all_metrics])
+    }
+
+    aggregated_conf_matrix = np.sum(all_conf_matrices, axis=0)
+
+    # Plotting aggregated history
     sns.set_style(style="whitegrid")
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    sns.lineplot(x=history["epoch"], y=history["train_acc"], label="Train Accuracy", ax=axes[0])
-    sns.lineplot(x=history["epoch"], y=history["val_acc"], label="Validation Accuracy", ax=axes[0])
+    sns.lineplot(x=aggregated_history["epoch"], y=aggregated_history["train_acc"], label="Train Accuracy", ax=axes[0])
+    sns.lineplot(x=aggregated_history["epoch"], y=aggregated_history["val_acc"], label="Validation Accuracy", ax=axes[0])
     axes[0].set_title("Accuracy Comparison")
     axes[0].set_xlabel("Epoch")
     axes[0].set_ylabel("Accuracy")
-    sns.lineplot(x=history["epoch"], y=history["train_loss"], label="Train Loss", ax=axes[1])
-    sns.lineplot(x=history["epoch"], y=history["val_loss"], label="Validation Loss", ax=axes[1])
+    sns.lineplot(x=aggregated_history["epoch"], y=aggregated_history["train_loss"], label="Train Loss", ax=axes[1])
+    sns.lineplot(x=aggregated_history["epoch"], y=aggregated_history["val_loss"], label="Validation Loss", ax=axes[1])
     axes[1].set_title("Loss Comparison")
     axes[1].set_xlabel("Epoch")
     axes[1].set_ylabel("Loss")
     plt.tight_layout()
     plt.show()
 
-    
-    metrics, conf_matrix = test_net(model, test_loader)
-    for metric, value in metrics.items():
-        print(f"{metric}: {value:.2f}")
-    
+    # Plotting aggregated confusion matrix
     plt.figure(figsize=(6, 5))
-    sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues", cbar=False, 
+    sns.heatmap(aggregated_conf_matrix, annot=True, fmt="d", cmap="Blues", cbar=False, 
                 xticklabels=["Negative", "Positive"], 
                 yticklabels=["Negative", "Positive"])
     plt.xlabel("Predicted Label")
     plt.ylabel("True Label")
-    plt.title("Confusion Matrix")
+    plt.title("Aggregated Confusion Matrix")
     plt.show()
 
 # %%
