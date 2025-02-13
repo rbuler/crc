@@ -59,7 +59,82 @@ def perform_statistical_tests(df: pd.DataFrame,
     results['p_value'] = p_value
     return results
 
+def plot_confusion_matrix(subset: pd.DataFrame, t_or_n: str) -> None:
+    if t_or_n == 'T':
+        y_true = subset['pT']
+        y_pred = subset['wmT']
+        # labels = sorted(subset['pT'].unique())
+        # labels = [f"T{label}" for label in labels]
+        labels = ['T0', 'T1', 'T2', 'T3', 'T4', 'T4a', 'T4b']
+    elif t_or_n == 'N':
+        y_true = subset['pN']
+        y_pred = subset['wmN']
+        # labels = sorted(subset['pN'].unique())
+        # labels = [f"N{label}" for label in labels]
+        labels = ['N0', 'N1a', 'N1b', 'N2a', 'N2b']
 
+
+    cm = confusion_matrix(y_true, y_pred)
+
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=labels, yticklabels=labels)
+    plt.xlabel("Radiologist")
+    plt.ylabel("Pathological")
+    if t_or_n == 'T':
+        plt.title("Tumour Staging: Radiologist vs. Pathological")
+    elif t_or_n == 'N':
+        plt.title("Node Staging: Radiologist vs. Pathological")
+    plt.yticks(rotation=0)
+    plt.gca().yaxis.set_ticks_position('none')
+    plt.gca().xaxis.set_ticks_position('none')
+    hatch_patterns = {
+        'overstaging': "/",
+        'understaging': "\\"
+    }
+
+    ax = plt.gca()
+    num_labels = len(labels)
+
+    for i in range(num_labels):
+        for j in range(num_labels):
+            if j > i:  # Over-staging (above diagonal)
+                rect = patches.Rectangle((j, i), 1, 1,
+                                            fill=False,
+                                            hatch=hatch_patterns['overstaging'],
+                                            edgecolor='black',
+                                            linewidth=0,
+                                            alpha=0.1)
+                ax.add_patch(rect)
+            elif j < i:  # Under-staging (below diagonal)
+                rect = patches.Rectangle((j, i), 1, 1,
+                                            fill=False,
+                                            hatch=hatch_patterns['understaging'],
+                                            edgecolor='black',
+                                            linewidth=0,
+                                            alpha=0.1)
+                ax.add_patch(rect)
+    plt.show()
+
+
+def plot_staging_distribution(subset: pd.DataFrame, column: str, label_prefix: str, title: str) -> None:
+    plt.figure(figsize=(10, 6))
+    order = sorted(subset[column].unique())
+    ax = sns.countplot(x=column, data=subset, palette='viridis', order=order)
+    order = [f"{label_prefix}{label}" for label in order]
+    plt.xticks(ticks=range(len(order)), labels=order)
+    plt.xlabel(title)
+    plt.ylabel('', rotation=0)
+    plt.yticks([])
+    sns.despine(top=True, bottom=True, left=True, right=True)
+    plt.gca().yaxis.set_ticks_position('none')
+    plt.gca().xaxis.set_ticks_position('none')
+    total = len(subset)
+    for p in ax.patches:
+        count = int(p.get_height())
+        percentage = 100 * count / total
+        ax.annotate(f'{count} ({percentage:.1f}%)', (p.get_x() + p.get_width() / 2., p.get_height()),
+                    ha='center', va='center', xytext=(0, 9), textcoords='offset points')
+    plt.show()
 
 if __name__ == '__main__':
 
@@ -149,85 +224,11 @@ if __name__ == '__main__':
             print(subset[key].value_counts())
         print(f"{results}")
 
-    y_true = subset['pN']
-    y_pred = subset['wmN']
-
-    labels = sorted(subset['pN'].unique())
-    labels_with_N = [f"N{label}" for label in labels]
-
-    cm = confusion_matrix(y_true, y_pred, labels=labels)
-
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=labels_with_N, yticklabels=labels_with_N)
-    plt.xlabel("Radiologist")
-    plt.ylabel("Pathological")
-    plt.title("Node Staging: Radiologist vs. Pathological")
-    plt.yticks(rotation=0)
-    plt.gca().yaxis.set_ticks_position('none')
-    plt.gca().xaxis.set_ticks_position('none')
-    hatch_patterns = {
-        'overstaging': "/",
-        'understaging': "\\"
-    }
-
-    ax = plt.gca()
-    num_labels = len(labels)
-
-    for i in range(num_labels):
-        for j in range(num_labels):
-            if j > i:  # Over-staging (above diagonal)
-                rect = patches.Rectangle((j, i), 1, 1,
-                                         fill=False,
-                                         hatch=hatch_patterns['overstaging'],
-                                         edgecolor='black',
-                                         linewidth=0,
-                                         alpha=0.1)
-                ax.add_patch(rect)
-            elif j < i:  # Under-staging (below diagonal)
-                rect = patches.Rectangle((j, i), 1, 1,
-                                         fill=False,
-                                         hatch=hatch_patterns['understaging'],
-                                         edgecolor='black',
-                                         linewidth=0,
-                                         alpha=0.1)
-                ax.add_patch(rect)
-    plt.show()
-
-    plt.figure(figsize=(10, 6))
-    wmT_order = sorted(subset['wmT'].unique())
-    ax = sns.countplot(x='wmT', data=subset, palette='viridis', order=wmT_order)
-    wmT_order = [f"T{label}" for label in wmT_order]
-    plt.xticks(ticks=range(len(wmT_order)), labels=wmT_order)
-    plt.xlabel('Tumour Staging')
-    plt.ylabel('', rotation=0)
-    plt.yticks([])
-    sns.despine(top=True, bottom=True, left=True, right=True)
-    plt.gca().yaxis.set_ticks_position('none')
-    plt.gca().xaxis.set_ticks_position('none')
-    total = len(subset)
-    for p in ax.patches:
-        count = int(p.get_height())
-        percentage = 100 * count / total
-        ax.annotate(f'{count} ({percentage:.1f}%)', (p.get_x() + p.get_width() / 2., p.get_height()),
-                    ha='center', va='center', xytext=(0, 9), textcoords='offset points')
-    plt.show()
-
-    plt.figure(figsize=(10, 6))
-    wmN_order = sorted(subset['wmN'].unique())
-    ax = sns.countplot(x='wmN', data=subset, palette='viridis', order=wmN_order)
-    wmN_order = [f"N{label}" for label in wmN_order]
-    plt.xlabel('Node Staging')
-    plt.ylabel('', rotation=0)
-    plt.xticks(ticks=range(len(wmN_order)), labels=wmN_order)
-    plt.yticks([])
-    sns.despine(top=True, bottom=True, left=True, right=True)
-    plt.gca().yaxis.set_ticks_position('none')
-    plt.gca().xaxis.set_ticks_position('none')
-    for p in ax.patches:
-        count = int(p.get_height())
-        percentage = 100 * count / total
-        ax.annotate(f'{count} ({percentage:.1f}%)', (p.get_x() + p.get_width() / 2., p.get_height()),
-                    ha='center', va='center', xytext=(0, 9), textcoords='offset points')
-    plt.show()
+    plot_confusion_matrix(subset, 'T')
+    plot_staging_distribution(subset, 'wmT', 'T', 'Tumour Staging (R)')
+    plot_staging_distribution(subset, 'pT', 'T', 'Tumour Staging (P)')
+    plot_confusion_matrix(subset, 'N')
+    plot_staging_distribution(subset, 'wmN', 'N', 'Node Staging (R)')
+    plot_staging_distribution(subset, 'pN', 'N', 'Node Staging (P)')
 
 # %%
