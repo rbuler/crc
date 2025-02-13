@@ -166,58 +166,15 @@ if __name__ == '__main__':
                          config=config,
                          transform=None,
                          save_new_masks=False)
-    # ------------------------
-    
-    selected_classes = ['lymph_node_positive', 'lymph_node_negative']
-    df = dataset.radiomic_features[dataset.radiomic_features['class_name'].isin(selected_classes)]
-    df.iloc[:, df.columns.get_loc('patient_id')] = df['patient_id'].astype(int)
-    df = df.sort_values(by='patient_id').reset_index(drop=True)
-    
-    counts_per_patient = df.groupby('patient_id')['class_name'].value_counts()
 
-    # Iterate through the grouped data and print the results
-    for patient_id, class_counts in counts_per_patient.groupby(level=0):
-        counts_str = ", ".join([f"{class_name}: {count}" for class_name, count in class_counts.items()])
-        for class_name, count in class_counts.items():
-            dataset.clinical_data.loc[dataset.clinical_data['Nr pacjenta'] == patient_id, class_name[1]] = count
-    dataset.clinical_data[
-        ['lymph_node_positive', 'lymph_node_negative']] = dataset.clinical_data[
-            ['lymph_node_positive', 'lymph_node_negative']].fillna(0).astype(int)
-    dataset.update_clinical_data()
-
-    # columns_to_select = ["Nr pacjenta", "wmN", "pN", "lymph_node_positive", "lymph_node_negative", "wmNlymph_node_positive_overnoding", "pNlymph_node_positive_overnoding",
-    #                      "Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane",
-    #                      "wmNLiczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane_overnoding"]
-    # subset = dataset.clinical_data[columns_to_select]
-
-
-    # columns_to_select = ["Nr pacjenta", "wmN"]
-    # subset = dataset.clinical_data[columns_to_select]
     subset = dataset.clinical_data
-    subset.rename(columns={"Nr pacjenta": "patient_id"}, inplace=True)
     subset["N_binary"] = subset["wmN"].apply(lambda x: "1" if x != "0" else "0")
     subset['T_binary'] = subset['wmT'].apply(lambda x: "1" if x != "0" else "0")
-
-
-    # select only patients that have already have images
-    # ids = []
-    # for i in range(len(dataset)):
-    #     ids.append(int(dataset.get_patient_id(i)))
-    # # bad quality/invalid annotations
-    # temp_to_drop = [140, 139, 138, 136, 132, 129, 128, 123, 120, 115, 113, 110, 108, 107, 102, 101, 99, 98,
-    #                 96, 88, 86, 75, 70, 61, 49, 48, 37, 26, 21, 8, 3, 2]
-    
-    # ids = list(set(ids) - set(temp_to_drop))
-    # subset = subset[subset['patient_id'].isin(ids)]
-
-    # sorted by patient_id
-    # new_df = subset.merge(df, how='inner', on='patient_id')
-
     subset = subset.dropna()
+
     for key in columns_to_analyze.keys():
         print(f"Results for {key}:", end=" ")
         if columns_to_analyze[key] == "cat":
-            # print(subset[key].value_counts())
             subset.loc[:, key] = subset[key].apply(lambda x: "0" if str(x).lower() in ['x', 'tia'] else x)
         results = perform_statistical_tests(subset, columns_to_analyze[key], key, "N_binary")
         if columns_to_analyze[key] == "cat":
