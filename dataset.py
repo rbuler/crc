@@ -6,6 +6,7 @@ import pandas as pd
 import nibabel as nib
 from torch.utils.data import Dataset
 from connected_components import create_instance_level_mask
+from utils import get_3d_bounding_boxes
 from extract_radiomics import get_radiomics
 
 class CRCDataset(Dataset):
@@ -22,6 +23,7 @@ class CRCDataset(Dataset):
                     f = os.path.join(root, name)
                     if 'labels.nii.gz' in f:
                         create_instance_level_mask(f, save_dir=f, verbose=True)
+
     
         for root, dirs, files in os.walk(self.root, topdown=False):
             for name in files:
@@ -98,6 +100,7 @@ class CRCDataset(Dataset):
     def __getitem__(self, idx):
         image_path = self.images_path[idx]
         mask_path = self.masks_path[idx]
+        mapping_path = self.mapping_path[idx]
         instance_mask_path = self.instance_masks_path[idx]
         radiomic_features = self.radiomic_features[self.radiomic_features['patient_id'] == self.get_patient_id(idx)]
         clinical_data = self.clinical_data[self.clinical_data['Nr pacjenta'] == int(self.get_patient_id(idx))]
@@ -123,7 +126,9 @@ class CRCDataset(Dataset):
 
         img = (img - img.min()) / (img.max() - img.min())
         
-        return img, mask, instance_mask, radiomic_features, clinical_data
+        bboxes = get_3d_bounding_boxes(instance_mask, mapping_path)
+
+        return img, bboxes, mask, instance_mask, radiomic_features, clinical_data
 
 
     def _clean_tnm_clinical_data(self):

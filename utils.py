@@ -1,11 +1,11 @@
 import os
 import torch
 import typing
+import pickle
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from ipywidgets import interact, IntSlider
-
 
 def find_unique_value_mapping(mask1, mask2) -> dict:
     """
@@ -126,3 +126,41 @@ def summarize_bags(bags):
     positive_bags = sum(1 for bag in bags if bag['bag_label'] == 1)
     negative_bags = sum(1 for bag in bags if bag['bag_label'] == 0)
     return positive_bags, negative_bags
+
+
+def get_3d_bounding_boxes(segmentation, mapping_path):
+    segmentation = segmentation.cpu().numpy()
+    instances = np.unique(segmentation)
+    instances = instances[instances > 0]
+
+    bounding_boxes = []
+
+    mapping = {}
+    instance_to_class = {}
+
+    with open(mapping_path, 'rb') as f:
+        mapping = pickle.load(f)
+        for category, data in mapping.items():
+            class_label = data['class_label']
+            for instance_label in data['instance_labels']:
+                instance_to_class[instance_label] = class_label
+    print(instance_to_class)
+    for instance in instances:
+        indices = np.argwhere(segmentation == instance)
+
+        if indices.size == 0:
+            continue
+
+        min_coords = indices.min(axis=0)
+        max_coords = indices.max(axis=0)
+
+
+        bounding_box = {
+            "label": int(instance_to_class[instance]),
+            "instance": int(instance),
+            "bbox": [*min_coords, *max_coords]  # [x_min, y_min, z_min, x_max, y_max, z_max]
+        }
+
+        bounding_boxes.append(bounding_box)
+
+    return bounding_boxes
