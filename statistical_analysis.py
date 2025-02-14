@@ -155,7 +155,7 @@ if __name__ == '__main__':
         "przebyty udar (tak/nie)": "cat", 
         "stan po interwencji na naczyniach wieńcowych (tak/nie)": "cat",
         "stan po pomostowaniu naczyń wieńcowych (tak/nie)": "cat",
-        "IBD": "cat", # 2 cat with and x 
+        # "IBD": "cat", # 3 cat and x 
         "Sterydy (czy przyjmuje) (tak/nie) (obecnie lub w ciagu ostatnich 3 miesięcy)": "cat", # 2 cat and x
         "Immunosupresja (czy przyjmuje) (tak/nie) (obecnie lub w ciagu ostatnich 3 miesięcy)" : "cat" # 2 cat and x
     }    
