@@ -2,23 +2,22 @@ seed: 42
 device: 'cuda:0'
 
 dir:
-  # root: '/media/dysk_a/jr_buler/RJG-gumed/RJG-6_labels_version'
-  root: '/media/dysk_a/jr_buler/RJG-gumed/RJG_13-02-25_nii_labels'
-  # clinical_data: '/media/dysk_a/jr_buler/RJG-gumed/crc_data_30-10-24.csv'
-  # clinical_data: '/media/dysk_a/jr_buler/RJG-gumed/crc_data_18-12-24.csv'
-  clinical_data: '/media/dysk_a/jr_buler/RJG-gumed/crc_data_13-02-25.csv'
-  inf: '/media/dysk_a/jr_buler/RJG-gumed/radiomics_info.pkl'
-  pkl_radiomics: '/media/dysk_a/jr_buler/RJG-gumed/radiomics_features.pkl'
+  root: '/media/dysk_a/jr_buler/RJG-gumed/'
+  nii_images: 'RJG_13-02-25_nii_labels'
+  dcm_images: 'RJG_13-02-25_dicom'
+  clinical_data: 'crc_data_13-02-25.csv'
+  inf: 'radiomics_info.pkl'
+  pkl_radiomics: 'radiomics_features.pkl'
 
 
 radiomics:  
-  action: 'load' # 'extract' to extract radiomics, 'load' to load from pkl
+  action: 'extract' # 'extract' to extract radiomics, 'load' to load from pkl
   mode: 'parallel' #serial, parallel
   n_processes: 2 # for parallel mode only; if None, use [(all available) - 1] cores
   save: False # True, False; for action 'extract'
   
   multiple_binWidth: 
-    if_multi: True # True, False; for action 'extract'; if True, extract radiomics for multiple bins
+    if_multi: False # True, False; for action 'extract'; if True, extract radiomics for multiple bins
                    # if False, extract radiomics for single bin given in params.yml
     binWidths: [5, 25]  # a list of binWidths 
   

@@ -159,10 +159,10 @@ if __name__ == '__main__':
         "Sterydy (czy przyjmuje) (tak/nie) (obecnie lub w ciagu ostatnich 3 miesięcy)": "cat", # 2 cat and x
         "Immunosupresja (czy przyjmuje) (tak/nie) (obecnie lub w ciagu ostatnich 3 miesięcy)" : "cat" # 2 cat and x
     }    
-    root = config['dir']['root']
-    clinical_data = config['dir']['clinical_data']
-    dataset = CRCDataset(root,
-                         clinical_data=clinical_data,
+    dataset = CRCDataset(root_dir=config['dir']['root'],
+                         clinical_data_dir=config['dir']['clinical_data'],
+                         nii_dir=config['dir']['nii_images'],
+                         dcm_dir=config['dir']['dcm_images'],
                          config=config,
                          transform=None,
                          save_new_masks=False)

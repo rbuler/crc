@@ -10,22 +10,32 @@ from utils import get_3d_bounding_boxes
 from extract_radiomics import get_radiomics
 
 class CRCDataset(Dataset):
-    def __init__(self, root, clinical_data, config, transform=None, save_new_masks=True):
-        self.root = root
+    def __init__(self, root_dir: os.PathLike,
+                 clinical_data_dir: os.PathLike,
+                 nii_dir: os.PathLike,
+                 dcm_dir: os.PathLike,
+                 config, transform=None, save_new_masks=True):
+        
+        self.root = root_dir
+        self.clinical_data = clinical_data_dir
+        self.nii_dir = nii_dir
+        self.dcm_dir = dcm_dir
+
         self.images_path = []
         self.masks_path = []
         self.instance_masks_path = []
         self.mapping_path = []
 
+        nii_pth = os.path.join(self.root, self.nii_dir)
         if save_new_masks:
-            for root, dirs, files in os.walk(self.root, topdown=False):
+            for root, dirs, files in os.walk(nii_pth, topdown=False):
                 for name in files:
                     f = os.path.join(root, name)
                     if 'labels.nii.gz' in f:
                         create_instance_level_mask(f, save_dir=f, verbose=True)
 
     
-        for root, dirs, files in os.walk(self.root, topdown=False):
+        for root, dirs, files in os.walk(nii_pth, topdown=False):
             for name in files:
                 f = os.path.join(root, name)
                 if 'labels.nii.gz' in f:
@@ -42,8 +52,9 @@ class CRCDataset(Dataset):
                                                    self.instance_masks_path,
                                                    self.mapping_path)
         default_missing = pd._libs.parsers.STR_NA_VALUES
+        clinical_data_dir = os.path.join(self.root, self.clinical_data)
         self.clinical_data = pd.read_csv(
-            clinical_data,
+            clinical_data_dir,
             delimiter=';',
             encoding='utf-8',
             index_col=False,

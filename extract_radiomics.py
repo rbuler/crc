@@ -38,10 +38,10 @@ def get_radiomics(images_path, masks_path, instance_masks_path, mapping_path):
         radiomics = extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path)
     
     elif config['radiomics']['action'] == 'load':
-    
-        with open(config['dir']['pkl_radiomics'], 'rb') as f:
+        pth = os.path.join(config['dir']['root'], config['dir']['pkl_radiomics'])
+        with open(pth, 'rb') as f:
             radiomics = pickle.load(f)
-        logger.info(f"Loaded radiomics features from {config['dir']['pkl_radiomics']}")
+        logger.info(f"Loaded radiomics features from {pth}")
 
     return radiomics
 
@@ -126,7 +126,8 @@ def extract_radiomics(images_path, masks_path, instance_masks_path, mapping_path
         if config['radiomics']['save']:
             image_types = radiomics_extractor.get_enabled_image_types()
             feature_types = radiomics_extractor.get_enabled_features()
-            with open(config['dir']['inf'], 'w') as file:
+            pth = os.path.join(config['dir']['root'], config['dir']['inf'])
+            with open(pth, 'w') as file:
                 current_datetime = datetime.datetime.now()
                 file.write(f"Modified: {current_datetime}\n")
                 file.write(yaml.dump(config))

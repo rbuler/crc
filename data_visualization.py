@@ -25,10 +25,10 @@ np.random.seed(config['seed'])
 
 if __name__ == '__main__':
     
-    root = config['dir']['root']
-    clinical_data = config['dir']['clinical_data']
-    dataset = CRCDataset(root,
-                         clinical_data=clinical_data,
+    dataset = CRCDataset(root_dir=config['dir']['root'],
+                         clinical_data_dir=config['dir']['clinical_data'],
+                         nii_dir=config['dir']['nii_images'],
+                         dcm_dir=config['dir']['dcm_images'],
                          config=config,
                          transform=None,
                          save_new_masks=False)
@@ -45,13 +45,13 @@ if __name__ == '__main__':
     for patient_id, class_counts in counts_per_patient.groupby(level=0):
         counts_str = ", ".join([f"{class_name}: {count}" for class_name, count in class_counts.items()])
         for class_name, count in class_counts.items():
-            dataset.clinical_data.loc[dataset.clinical_data['Nr pacjenta'] == patient_id, class_name[1]] = count
+            dataset.clinical_data.loc[dataset.clinical_data['patient_id'] == patient_id, class_name[1]] = count
     dataset.clinical_data[
         ['lymph_node_positive', 'lymph_node_negative']] = dataset.clinical_data[
             ['lymph_node_positive', 'lymph_node_negative']].fillna(0).astype(int)
     dataset.update_clinical_data()
 
-    columns_to_select = ["Nr pacjenta", "wmN", "pN", "lymph_node_positive", "lymph_node_negative", "wmNlymph_node_positive_overnoding", "pNlymph_node_positive_overnoding",
+    columns_to_select = ["patient_id", "wmN", "pN", "lymph_node_positive", "lymph_node_negative", "wmNlymph_node_positive_overnoding", "pNlymph_node_positive_overnoding",
                          "Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane",
                          "wmNLiczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane_overnoding"]
     subset = dataset.clinical_data[columns_to_select]
@@ -60,7 +60,7 @@ if __name__ == '__main__':
     ids = []
     for i in range(len(dataset)):
         ids.append(int(dataset.get_patient_id(i)))
-    subset = subset[subset['Nr pacjenta'].isin(ids)]
+    subset = subset[subset['patient_id'].isin(ids)]
 
     #TODO drop patients with no target (rad+clinical)
     # ------------------------
@@ -89,7 +89,6 @@ if __name__ == '__main__':
         selected_features_icc = icc_select_reproducible(features=features,
                                                         labels=labels,
                                                         threshold=0.75,
-                                                        comparison_type=comparison_type,
                                                         bin_widths=bin_widths)
         reproducible_features = features_for_comparison[selected_features_icc]
     else:

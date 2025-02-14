@@ -36,13 +36,13 @@ torch.cuda.manual_seed(seed)
 # %%
 if __name__ == '__main__':
     
-    root = config['dir']['root']
-    clinical_data = config['dir']['clinical_data']
-    dataset = CRCDataset(root,
-                         clinical_data=clinical_data,
+    dataset = CRCDataset(root_dir=config['dir']['root'],
+                         clinical_data_dir=config['dir']['clinical_data'],
+                         nii_dir=config['dir']['nii_images'],
+                         dcm_dir=config['dir']['dcm_images'],
                          config=config,
                          transform=None,
-                         save_new_masks=False)
+                         save_new_masks=True)
     
     selected_classes = ['lymph_node_positive', 'lymph_node_negative']
     
@@ -55,7 +55,7 @@ if __name__ == '__main__':
     for patient_id, class_counts in counts_per_patient.groupby(level=0):
         counts_str = ", ".join([f"{class_name}: {count}" for class_name, count in class_counts.items()])
         for class_name, count in class_counts.items():
-            dataset.clinical_data.loc[dataset.clinical_data['Nr pacjenta'] == patient_id, class_name[1]] = count
+            dataset.clinical_data.loc[dataset.clinical_data['patient_id'] == patient_id, class_name[1]] = count
     
     dataset.clinical_data[
         ['lymph_node_positive', 'lymph_node_negative']] = dataset.clinical_data[
@@ -65,9 +65,9 @@ if __name__ == '__main__':
     # columns_to_select = ["Nr pacjenta", "wmN", "pN", "lymph_node_positive", "lymph_node_negative", "wmNlymph_node_positive_overnoding", "pNlymph_node_positive_overnoding",
     #                      "Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane",
     #                      "wmNLiczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane_overnoding"]
-    columns_to_select = ["Nr pacjenta", "wmN"]
+    columns_to_select = ["patient_id", "wmN"]
     subset = dataset.clinical_data[columns_to_select]
-    subset.rename(columns={"Nr pacjenta": "patient_id"}, inplace=True)
+    # subset.rename(columns={"Nr pacjenta": "patient_id"}, inplace=True)
 
     # select only patients that have already have images
     ids = []
