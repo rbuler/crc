@@ -144,7 +144,6 @@ def get_3d_bounding_boxes(segmentation, mapping_path):
             class_label = data['class_label']
             for instance_label in data['instance_labels']:
                 instance_to_class[instance_label] = class_label
-    print(instance_to_class)
     for instance in instances:
         indices = np.argwhere(segmentation == instance)
 
