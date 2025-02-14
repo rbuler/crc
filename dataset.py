@@ -53,12 +53,16 @@ class CRCDataset(Dataset):
 
         self.clinical_data.columns = self.clinical_data.columns.str.strip()
         self.clinical_data = self.clinical_data[config['clinical_data_attributes'].keys()]
+        
         self.clinical_data.dropna(subset=['Nr pacjenta'], inplace=True)
         self.clinical_data.dropna(subset=['Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane'], inplace=True)
         
         for column, dtype in config['clinical_data_attributes'].items():
             self.clinical_data[column] = self.clinical_data[column].astype(dtype)
         self.clinical_data = self.clinical_data.reset_index(drop=True)
+        
+        self.clinical_data.rename(columns={'Nr pacjenta': 'patient_id'}, inplace=True)
+        
         self._clean_tnm_clinical_data()
 
         category_order_N = {'0': 0, '1a': 1, '1b': 2, '2a': 3, '2b': 4, '1c': np.nan, 'nan': np.nan}
@@ -103,7 +107,7 @@ class CRCDataset(Dataset):
         mapping_path = self.mapping_path[idx]
         instance_mask_path = self.instance_masks_path[idx]
         radiomic_features = self.radiomic_features[self.radiomic_features['patient_id'] == self.get_patient_id(idx)]
-        clinical_data = self.clinical_data[self.clinical_data['Nr pacjenta'] == int(self.get_patient_id(idx))]
+        clinical_data = self.clinical_data[self.clinical_data['patient_id'] == int(self.get_patient_id(idx))]
 
         img = np.asarray(nib.load(image_path).dataobj)
         img = torch.from_numpy(img)
