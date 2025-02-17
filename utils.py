@@ -134,8 +134,8 @@ def get_3d_bounding_boxes(segmentation, mapping_path):
     instances = instances[instances > 0]
 
     bounding_boxes = []
+    labels = []
 
-    mapping = {}
     instance_to_class = {}
 
     with open(mapping_path, 'rb') as f:
@@ -144,6 +144,7 @@ def get_3d_bounding_boxes(segmentation, mapping_path):
             class_label = data['class_label']
             for instance_label in data['instance_labels']:
                 instance_to_class[instance_label] = class_label
+
     for instance in instances:
         indices = np.argwhere(segmentation == instance)
 
@@ -153,13 +154,99 @@ def get_3d_bounding_boxes(segmentation, mapping_path):
         min_coords = indices.min(axis=0)
         max_coords = indices.max(axis=0)
 
-
-        bounding_box = {
-            "label": int(instance_to_class[instance]),
-            "instance": int(instance),
-            "bbox": [*min_coords, *max_coords]  # [x_min, y_min, z_min, x_max, y_max, z_max]
-        }
-
+        # bounding_box = torch.tensor([*min_coords, *max_coords], dtype=torch.int32)
+        # label = torch.tensor(int(instance_to_class[instance]), dtype=torch.int32)
+        bounding_box = [*min_coords, *max_coords]
+        label = int(instance_to_class[instance])
         bounding_boxes.append(bounding_box)
+        labels.append(label)
 
-    return bounding_boxes
+    return {'boxes': np.stack(bounding_boxes), 'labels': np.stack(labels)}
+
+
+def get_2d_bounding_boxes(segmentation, mapping_path, plane='xy'):
+    segmentation = segmentation.cpu().numpy()
+    instances = np.unique(segmentation)
+    instances = instances[instances > 0]
+    instance_to_class = {}
+    with open(mapping_path, 'rb') as f:
+        mapping = pickle.load(f)
+        for category, data in mapping.items():
+            class_label = data['class_label']
+            for instance_label in data['instance_labels']:
+                instance_to_class[instance_label] = class_label
+
+    bounding_boxes_per_slice = {}
+
+    for instance in instances:
+        indices = np.argwhere(segmentation == instance)
+
+        if indices.size == 0:
+            continue
+
+        class_label = int(instance_to_class.get(instance, -1))
+
+        if plane == 'xy':
+            slices = np.unique(indices[:, 0])
+            for z in slices:
+                slice_indices = indices[indices[:, 0] == z][:, 1:]
+                min_coords = slice_indices.min(axis=0)
+                max_coords = slice_indices.max(axis=0)
+                if (max_coords[0] - min_coords[0] < 2) or (max_coords[1] - min_coords[1] < 2):
+                    continue
+                bbox = [min_coords[1], min_coords[0], max_coords[1], max_coords[0]]
+
+                if z not in bounding_boxes_per_slice:
+                    bounding_boxes_per_slice[z] = {'boxes': [], 'labels': []}
+                bounding_boxes_per_slice[z]['boxes'].append(bbox)
+                bounding_boxes_per_slice[z]['labels'].append(class_label)
+
+        elif plane == 'xz':
+            slices = np.unique(indices[:, 1])
+            for y in slices:
+                slice_indices = indices[indices[:, 1] == y][:, [0, 2]]
+                min_coords = slice_indices.min(axis=0)
+                max_coords = slice_indices.max(axis=0)
+                if (max_coords[0] - min_coords[0] < 2) or (max_coords[1] - min_coords[1] < 2):
+                    continue
+                bbox = [min_coords[1], min_coords[0], max_coords[1], max_coords[0]]
+
+                if y not in bounding_boxes_per_slice:
+                    bounding_boxes_per_slice[y] = {'boxes': [], 'labels': []}
+                bounding_boxes_per_slice[y]['boxes'].append(bbox)
+                bounding_boxes_per_slice[y]['labels'].append(class_label)
+
+        elif plane == 'yz':
+            slices = np.unique(indices[:, 2])
+            for x in slices:
+                slice_indices = indices[indices[:, 2] == x][:, :2]
+                min_coords = slice_indices.min(axis=0)
+                max_coords = slice_indices.max(axis=0)
+                if (max_coords[0] - min_coords[0] < 2) or (max_coords[1] - min_coords[1] < 2):
+                    continue
+                bbox = [min_coords[1], min_coords[0], max_coords[1], max_coords[0]]
+
+                if x not in bounding_boxes_per_slice:
+                    bounding_boxes_per_slice[x] = {'boxes': [], 'labels': []}
+                bounding_boxes_per_slice[x]['boxes'].append(bbox)
+                bounding_boxes_per_slice[x]['labels'].append(class_label)
+    
+    if plane == 'xy':
+        total_slices = segmentation.shape[0]
+    elif plane == 'xz':
+        total_slices = segmentation.shape[1]
+    elif plane == 'yz':
+        total_slices = segmentation.shape[2]
+
+    for slice_index in range(total_slices):
+        if slice_index not in bounding_boxes_per_slice:
+            bounding_boxes_per_slice[slice_index] = {'boxes': torch.empty((0, 4), dtype=torch.float32), 'labels': torch.empty((0,), dtype=torch.int64)}
+        else:
+            bounding_boxes_per_slice[slice_index]['boxes'] = torch.tensor(
+                bounding_boxes_per_slice[slice_index]['boxes'], dtype=torch.float32
+            )
+            bounding_boxes_per_slice[slice_index]['labels'] = torch.tensor(
+                bounding_boxes_per_slice[slice_index]['labels'], dtype=torch.int64
+            )
+
+    return bounding_boxes_per_slice
