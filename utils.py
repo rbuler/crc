@@ -154,8 +154,11 @@ def get_3d_bounding_boxes(segmentation, mapping_path):
         min_coords = indices.min(axis=0)
         max_coords = indices.max(axis=0)
 
-        # bounding_box = torch.tensor([*min_coords, *max_coords], dtype=torch.int32)
-        # label = torch.tensor(int(instance_to_class[instance]), dtype=torch.int32)
+        d, h, w = max_coords[0] - min_coords[0], max_coords[1] - min_coords[1], max_coords[2] - min_coords[2]
+
+        if d <= 0 or h <= 0 or w <= 0:
+            continue
+
         bounding_box = [*min_coords, *max_coords]
         label = int(instance_to_class[instance])
         bounding_boxes.append(bounding_box)
