@@ -4,24 +4,28 @@ import torch
 import numpy as np
 import pandas as pd
 import nibabel as nib
+from collections import defaultdict
 from torch.utils.data import Dataset
 from connected_components import create_instance_level_mask
 from utils import get_3d_bounding_boxes
 from extract_radiomics import get_radiomics
+import logging
+logger = logging.getLogger(__name__)
 
 class CRCDataset(Dataset):
     def __init__(self, root_dir: os.PathLike,
                  clinical_data_dir: os.PathLike,
                  nii_dir: os.PathLike,
                  dcm_dir: os.PathLike,
-                 config, transform=None, save_new_masks=True):
+                 config, transform=None, save_new_masks=False):
         
         self.root = root_dir
         self.clinical_data = clinical_data_dir
         self.nii_dir = nii_dir
         self.dcm_dir = dcm_dir
 
-        self.images_path = []
+        self.nii_images_path = []
+        # self.dcm_images_path = []
         self.masks_path = []
         self.instance_masks_path = []
         self.mapping_path = []
@@ -34,20 +38,30 @@ class CRCDataset(Dataset):
                     if 'labels.nii.gz' in f:
                         create_instance_level_mask(f, save_dir=f, verbose=True)
 
-    
+        pattern = re.compile(r'^\d+a$') # take only those ##a
         for root, dirs, files in os.walk(nii_pth, topdown=False):
             for name in files:
                 f = os.path.join(root, name)
+                folder_name = f.split('/')[-2]
+                if not pattern.match(folder_name):
+                    logger.info(f"Skipping {folder_name}. Pattern does not match. {pattern}")
+                    continue
                 if 'labels.nii.gz' in f:
                     self.masks_path.append(f)
                 elif 'instance_mask.nii.gz' in f:
                     self.instance_masks_path.append(f)
                 elif 'nii.gz' in f:
-                    self.images_path.append(f)
+                    self.nii_images_path.append(f)
                 elif 'mapping.pkl' in f:
                     self.mapping_path.append(f)
 
-        self.radiomic_features = get_radiomics(self.images_path,
+        dcm_pth = os.path.join(self.root, self.dcm_dir)
+        self.dcm_images_path = self._group_dicom_folders(dcm_pth)
+        # TODO: Add support for dicom images
+        # 3 phases: arterial, portal venous, non-contrast
+
+
+        self.radiomic_features = get_radiomics(self.nii_images_path,
                                                    self.masks_path,
                                                    self.instance_masks_path,
                                                    self.mapping_path)
@@ -104,16 +118,16 @@ class CRCDataset(Dataset):
 
     def __len__(self):
         # todo
-        return len(self.images_path)
+        return len(self.nii_images_path)
     
 
     def get_patient_id(self, idx):
-        patient_id = os.path.basename(self.images_path[idx]).split('_')[0].split(' ')[0]
+        patient_id = os.path.basename(self.nii_images_path[idx]).split('_')[0].split(' ')[0]
         return ''.join(filter(str.isdigit, patient_id))
 
 
     def __getitem__(self, idx):
-        image_path = self.images_path[idx]
+        image_path = self.nii_images_path[idx]
         mask_path = self.masks_path[idx]
         mapping_path = self.mapping_path[idx]
         instance_mask_path = self.instance_masks_path[idx]
@@ -246,4 +260,20 @@ class CRCDataset(Dataset):
         self.fill_num_nodes('wmN', node_count_N, 'wmN_node_count', 'Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane')
         
         
+    def _group_dicom_folders(self, dicom_folders_path):
+        grouped = defaultdict(dict)
+        pattern = re.compile(r'(\d+)([bc]?)')
 
+        for folder in dicom_folders_path:
+            match = pattern.fullmatch(folder)
+            if match:
+                base_num = int(match.group(1))
+                suffix = match.group(2)
+
+                if suffix == 'b':
+                    grouped[base_num]['b'] = folder
+                elif suffix == 'c':
+                    grouped[base_num]['c'] = folder
+                else:
+                    grouped[base_num]['a'] = folder
+        return [dict(a=group.get('a', ''), b=group.get('b', ''), c=group.get('c', '')) for group in grouped.values()]
