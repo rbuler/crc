@@ -13,7 +13,7 @@ def check_masks_inside_boxes(data_loader):
             inside_pixels = 0
             bbox_volume = 0
             for box, label in zip(boxes, labels):
-                xmin, ymin, zmin, xmax, ymax, zmax = box
+                xmin, ymin, zmin, xmax, ymax, zmax = map(int, box)
                 mask_region = mask[:, xmin:xmax, ymin:ymax, zmin:zmax]
                 bbox_volume += (xmax - xmin) * (ymax - ymin) * (zmax - zmin)
                 inside_pixels += np.count_nonzero(mask_region == label)
