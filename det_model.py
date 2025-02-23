@@ -93,7 +93,7 @@ def retinanet_resnet_fpn_detector(
     """
 
     backbone = resnet.resnet18(pretrained, progress, **kwargs)
-    logger.info(f"backbone: {backbone}")
+    # logger.info(f"backbone: {backbone}")
     spatial_dims = len(backbone.conv1.stride)
     # number of output feature maps is len(returned_layers)+1
     feature_extractor = resnet_fpn_feature_extractor(
@@ -115,4 +115,4 @@ def retinanet_resnet_fpn_detector(
         size_divisible=size_divisible,
     )
     logger.info(f"network params: {count_parameters(network)/1e6:.2f}M")
-    return RetinaNetDetector(network, anchor_generator, debug=True)
+    return RetinaNetDetector(network, anchor_generator, debug=False)
