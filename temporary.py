@@ -12,8 +12,6 @@ import nibabel as nib
 import torch.optim as optim
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
-import torchvision.transforms.functional  as F
-
 
 sys.path.append('/home/r_buler/coding/crc/pytorch-3dunet/')
 from pytorch3dunet.unet3d.model import UNet3D
@@ -184,22 +182,6 @@ class CRCDataset(Dataset):
         # return image, mask , bboxes, instance_mask
 
 
-class CustomTransform:
-    def __call__(self, image, mask):
-        if random.random() > 0.5:
-            image = F.hflip(image)
-            mask = F.hflip(mask)
-        if random.random() > 0.5:
-            image = F.vflip(image)
-            mask = F.vflip(mask)
-        angle = random.choice([0, 90, 180, 270])
-        image = F.rotate(image, angle)
-        mask = F.rotate(mask, angle)
-        # image = F.normalize(image, mean=[0.5], std=[0.5])
-        return image, mask
-    
-
-
 def evaluate_segmentation(pred_logits, true_mask, num_classes=7):
 
     pred_probs = torch.sigmoid(pred_logits) if num_classes == 1 else torch.softmax(pred_logits, dim=1)
@@ -221,34 +203,9 @@ def evaluate_segmentation(pred_logits, true_mask, num_classes=7):
         "IoU": mean_iou,
         "Dice": mean_dice,
     }
-
-
-class HybridLoss(torch.nn.Module):
-    def __init__(self, num_classes=7,
-                 dice_weight=0.5, ce_weight=0.5, device='cuda',
-                 weights=torch.tensor([0.1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])):
-        super().__init__()
-        self.num_classes = num_classes
-        self.dice_weight = dice_weight
-        self.ce_weight = ce_weight
-        self.ce_loss = torch.nn.CrossEntropyLoss(weight=weights.to(device))
-        self.dice_loss = DiceLoss(to_onehot_y=True, softmax=True)
-
-    def forward(self, logits, mask):
-        ce_loss = self.ce_loss(logits, mask)
-        # mask_one_hot = nn.functional.one_hot(mask, num_classes=self.num_classes)  # (B, D, H, W, C)
-        # mask_one_hot = mask_one_hot.permute(0, 4, 1, 2, 3).contiguous()  # (B, C, D, H, W)
-        # dice_loss = self.dice_loss(logits, mask_one_hot)
-        mask = mask.unsqueeze(1)
-        dice_loss = self.dice_loss(logits, mask)
-        print(f"CE Loss: {ce_loss.item()}, Dice Loss: {dice_loss.item()}")
-        total_loss = self.dice_weight * dice_loss + self.ce_weight * ce_loss
-        return total_loss
-    
 # %%
 dataset = CRCDataset(root_dir=config['dir']['root'],
                         nii_dir=config['dir']['nii_images'],
-                        # transforms=CustomTransform(),
                         transforms=None,
                         patch_size=(128, 128, 64),  # (H, W, D)
                         stride=32,
@@ -262,10 +219,6 @@ device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 num_classes = 1
 model = UNet3D(in_channels=1, out_channels=num_classes, final_sigmoid=True).to(device)
 criterion = DiceLoss(softmax=False, sigmoid=True, to_onehot_y=False)
-# criterion = HybridLoss(num_classes=num_classes, device=device)
-# weights = torch.tensor([0.1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
-# criterion = torch.nn.CrossEntropyLoss(weight=weights.to(device))
-
 
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
@@ -283,14 +236,13 @@ for epoch in range(num_epochs):
         # mask_patch.shape = (B, H, W, D)
         img_patch = img_patch.permute(0, 1, 4, 2, 3)
         mask_patch = mask_patch.permute(0, 3, 1, 2)
-
         # img_patch.shape =  (B, 1, D, H, W)
         # mask_patch.shape = (B, D, H, W)
-        # outputs.shape = (B, N, D, H, W)
-        # logits.shape = (B, N, D, H, W)
         img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.long)
         optimizer.zero_grad()
         outputs, logits = model(img_patch, return_logits=True)
+        # outputs.shape = (B, N, D, H, W)
+        # logits.shape = (B, N, D, H, W)
         mask_patch = mask_patch.unsqueeze(1)
         loss = criterion(logits, mask_patch)
         metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
