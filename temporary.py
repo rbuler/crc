@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 
 sys.path.append('/home/r_buler/coding/crc/pytorch-3dunet/')
 from pytorch3dunet.unet3d.model import UNet3D
-from monai.losses import DiceLoss
+from monai.losses import TverskyLoss
 from monai.metrics import DiceMetric, MeanIoU
 # from pytorch3dunet.unet3d.losses import DiceLoss
 
@@ -38,6 +38,8 @@ seed = config['seed']
 np.random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
+
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 # %%
 class CRCDataset(Dataset):
@@ -109,7 +111,7 @@ class CRCDataset(Dataset):
 
         foreground_patches = [p for p in patch_candidates if torch.any(p[1] > 0)]
         background_patches = [p for p in patch_candidates if not torch.any(p[1] > 0)]
-
+        
         min_samples = min(len(foreground_patches), len(background_patches))
         num_samples = min(min_samples, self.num_patches_per_sample // 2)
 
@@ -148,8 +150,10 @@ class CRCDataset(Dataset):
         
         threshold_min = -125  # lower bound for soft tissue
         threshold_max = 225  # upper bound for soft tissue
-        image = torch.clamp(image, threshold_min, threshold_max)
+        
+# 
         image = image - threshold_min
+        image[(image <= 0) & (image >= threshold_max - threshold_min)] = 0
         image = image / (threshold_max - threshold_min)
 
         # # assign 0 values to mask > 1
@@ -212,15 +216,21 @@ dataset = CRCDataset(root_dir=config['dir']['root'],
                         num_patches_per_sample=100
                         )
 
+train_size = int(0.8 * len(dataset))
+val_size = int(0.1 * len(dataset))
+test_size = len(dataset) - train_size - val_size
+train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
 
-dataloader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=0)
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+# dataloader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=0)
+train_dataloader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=0)
+val_dataloader = DataLoader(val_dataset, batch_size=2, shuffle=False, num_workers=0)
+test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
 
 num_classes = 1
 model = UNet3D(in_channels=1, out_channels=num_classes, final_sigmoid=True).to(device)
-criterion = DiceLoss(softmax=False, sigmoid=True, to_onehot_y=False)
+criterion = TverskyLoss(softmax=False, sigmoid=True, to_onehot_y=False)
 
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
 # %%
 num_epochs = 2000
@@ -229,24 +239,15 @@ for epoch in range(num_epochs):
     total_loss = 0
     total_iou = 0
     total_dice = 0
-    num_batches = len(dataloader)
+    num_batches = len(train_dataloader)
     
-    for img_patch, mask_patch in dataloader:
-        # img_patch.shape =  (B, 1, H, W, D)
-        # mask_patch.shape = (B, H, W, D)
-        img_patch = img_patch.permute(0, 1, 4, 2, 3)
-        mask_patch = mask_patch.permute(0, 3, 1, 2)
-        # img_patch.shape =  (B, 1, D, H, W)
-        # mask_patch.shape = (B, D, H, W)
+    for img_patch, mask_patch in train_dataloader:
         img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.long)
         optimizer.zero_grad()
         outputs, logits = model(img_patch, return_logits=True)
-        # outputs.shape = (B, N, D, H, W)
-        # logits.shape = (B, N, D, H, W)
         mask_patch = mask_patch.unsqueeze(1)
         loss = criterion(logits, mask_patch)
         metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
-        # print(f"Loss: {loss.item()}, IoU: {metrics['IoU']}, Dice: {metrics['Dice']}")
         total_loss += loss.item()
         total_iou += metrics["IoU"]
         total_dice += metrics["Dice"]
@@ -257,8 +258,30 @@ for epoch in range(num_epochs):
     avg_loss = total_loss / num_batches
     avg_iou = total_iou / num_batches
     avg_dice = total_dice / num_batches
-    
     print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}, IoU: {avg_iou:.4f}, Dice: {avg_dice:.4f}")
+    
+    
+    model.eval()
+    val_loss = 0
+    val_iou = 0
+    val_dice = 0
+    num_val_batches = len(val_dataloader)
+    
+    with torch.no_grad():
+        for img_patch, mask_patch in val_dataloader:
+            img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.long)
+            outputs, logits = model(img_patch, return_logits=True)
+            mask_patch = mask_patch.unsqueeze(1)
+            loss = criterion(logits, mask_patch)
+            metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
+            val_loss += loss.item()
+            val_iou += metrics["IoU"]
+            val_dice += metrics["Dice"]
+    
+    avg_val_loss = val_loss / num_val_batches
+    avg_val_iou = val_iou / num_val_batches
+    avg_val_dice = val_dice / num_val_batches
+    print(f"Validation - Loss: {avg_val_loss:.4f}, IoU: {avg_val_iou:.4f}, Dice: {avg_val_dice:.4f}")
 
 # %%
 
