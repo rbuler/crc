@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import yaml
+import time
 import torch
 import random
 import utils
@@ -167,8 +168,11 @@ class CRCDataset(Dataset):
         # bboxes = get_2d_bounding_boxes(instance_mask, self.mapping_path[idx], plane='xy')
 
         patches = self.extract_patches(image, mask)
-        img_patch, mask_patch = random.choice(patches)
-        img_patch = img_patch.unsqueeze(0)
+        # img_patch, mask_patch = random.choice(patches)
+        selected_patches = random.sample(patches, 16)
+        img_patch = torch.stack([p[0] for p in selected_patches])
+        mask_patch = torch.stack([p[1] for p in selected_patches])
+        # img_patch = img_patch.unsqueeze(0)
         # import json
         # save to json file 
         # image path, seg path, bboxes
@@ -182,7 +186,7 @@ class CRCDataset(Dataset):
 
 
 
-        return img_patch, mask_patch
+        return img_patch, mask_patch, image, mask
         # return image, mask , bboxes, instance_mask
 
 
@@ -208,13 +212,16 @@ def evaluate_segmentation(pred_logits, true_mask, num_classes=7):
         "Dice": mean_dice,
     }
 # %%
+patch_size = (96, 96, 32)  # (H, W, D)
+stride = 32
+batch_size = 1
+
 dataset = CRCDataset(root_dir=config['dir']['root'],
                         nii_dir=config['dir']['nii_images'],
                         transforms=None,
-                        patch_size=(128, 128, 64),  # (H, W, D)
-                        stride=32,
-                        num_patches_per_sample=100
-                        )
+                        patch_size=patch_size,
+                        stride=stride,
+                        num_patches_per_sample=100)
 
 train_size = int(0.8 * len(dataset))
 val_size = int(0.1 * len(dataset))
@@ -222,8 +229,15 @@ test_size = len(dataset) - train_size - val_size
 train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
 
 # dataloader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=0)
-train_dataloader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=0)
-val_dataloader = DataLoader(val_dataset, batch_size=2, shuffle=False, num_workers=0)
+def collate_fn(batch):
+    img_patch, mask_patch, _, _ = zip(*batch)
+    img_patch = torch.stack(img_patch)
+    mask_patch = torch.stack(mask_patch)
+    return img_patch, mask_patch
+
+
+train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, collate_fn=collate_fn)
+val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0, collate_fn=collate_fn)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
 
 num_classes = 1
@@ -235,6 +249,8 @@ optimizer = optim.Adam(model.parameters(), lr=0.0001)
 # %%
 num_epochs = 2000
 for epoch in range(num_epochs):
+    start_time = time.time()
+    
     model.train()
     total_loss = 0
     total_iou = 0
@@ -244,8 +260,10 @@ for epoch in range(num_epochs):
     for img_patch, mask_patch in train_dataloader:
         img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.long)
         optimizer.zero_grad()
+        img_patch = img_patch.permute(1, 0, 2, 3, 4)  #
+        mask_patch = mask_patch.permute(1, 0, 2, 3, 4)  #
         outputs, logits = model(img_patch, return_logits=True)
-        mask_patch = mask_patch.unsqueeze(1)
+        # mask_patch = mask_patch.unsqueeze(1)  #
         loss = criterion(logits, mask_patch)
         metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
         total_loss += loss.item()
@@ -258,9 +276,7 @@ for epoch in range(num_epochs):
     avg_loss = total_loss / num_batches
     avg_iou = total_iou / num_batches
     avg_dice = total_dice / num_batches
-    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}, IoU: {avg_iou:.4f}, Dice: {avg_dice:.4f}")
-    
-    
+
     model.eval()
     val_loss = 0
     val_iou = 0
@@ -270,8 +286,10 @@ for epoch in range(num_epochs):
     with torch.no_grad():
         for img_patch, mask_patch in val_dataloader:
             img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.long)
+            img_patch = img_patch.permute(1, 0, 2, 3, 4)  #
+            mask_patch = mask_patch.permute(1, 0, 2, 3, 4)   #
             outputs, logits = model(img_patch, return_logits=True)
-            mask_patch = mask_patch.unsqueeze(1)
+            # mask_patch = mask_patch.unsqueeze(1)  #
             loss = criterion(logits, mask_patch)
             metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
             val_loss += loss.item()
@@ -281,10 +299,56 @@ for epoch in range(num_epochs):
     avg_val_loss = val_loss / num_val_batches
     avg_val_iou = val_iou / num_val_batches
     avg_val_dice = val_dice / num_val_batches
-    print(f"Validation - Loss: {avg_val_loss:.4f}, IoU: {avg_val_iou:.4f}, Dice: {avg_val_dice:.4f}")
+
+    end_time = time.time()
+    epoch_time = end_time - start_time
+
+    epoch_time_hms = time.strftime("%H:%M:%S", time.gmtime(epoch_time))
+    print(f"Epoch [{epoch+1}/{num_epochs}], "
+          f"Train Loss: {avg_loss:.4f}, Train IoU: {avg_iou:.4f}, Train Dice: {avg_dice:.4f}, "
+          f"Val Loss: {avg_val_loss:.4f}, Val IoU: {avg_val_iou:.4f}, Val Dice: {avg_val_dice:.4f}, "
+          f"Time: {epoch_time_hms}")
 
 # %%
+# inference test with sliding window
 
+def sliding_window_inference(image, model, patch_size, stride, device):
+    model.eval()
+    _, H, W, D = image.shape
+    h_size, w_size, d_size = patch_size
+
+    h_idxs = list(range(0, H - h_size + 1, stride))
+    w_idxs = list(range(0, W - w_size + 1, stride))
+    d_idxs = list(range(0, D - d_size + 1, stride))
+
+    output = torch.zeros((1, H, W, D), device=device)
+    count_map = torch.zeros((1, H, W, D), device=device)
+
+    with torch.no_grad():
+        for h in h_idxs:
+            for w in w_idxs:
+                for d in d_idxs:
+                    img_patch = image[:, h:h+h_size, w:w+w_size, d:d+d_size].to(device, dtype=torch.float32)
+                    img_patch = img_patch.unsqueeze(0)
+                    _, logits = model(img_patch, return_logits=True)
+                    output[:, h:h+h_size, w:w+w_size, d:d+d_size] += logits.squeeze(0)
+                    count_map[:, h:h+h_size, w:w+w_size, d:d+d_size] += 1
+
+    output /= count_map
+    return output
+
+model.eval()
+for _, _, image, mask in test_dataloader:
+    image = image.to(device, dtype=torch.float32)
+    pred_logits = sliding_window_inference(image, model, patch_size=patch_size,  stride=stride, device=device)
+    metrics = evaluate_segmentation(pred_logits, mask.to(device, dtype=torch.long), num_classes=num_classes)
+    print(f"Test IoU: {metrics['IoU']:.4f}, Test Dice: {metrics['Dice']:.4f}")
+
+# draw 3d prediction mask with ground truth mask
+
+
+
+# %%
 
 # x = dataset[22]
 # image = x[0]  # Shape (512, 512, 264)
