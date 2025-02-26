@@ -13,10 +13,9 @@ import nibabel as nib
 import torch.optim as optim
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
-
-sys.path.append('/home/r_buler/coding/crc/pytorch-3dunet/')
 from pytorch3dunet.unet3d.model import UNet3D
 import monai.transforms as mt
+
 from monai.losses import TverskyLoss
 from monai.metrics import DiceMetric, MeanIoU
 # from pytorch3dunet.unet3d.losses import DiceLoss
@@ -268,6 +267,12 @@ optimizer = optim.Adam(model.parameters(), lr=1e-5, weight_decay=1e-4)
 
 # %%
 num_epochs = 2000
+best_val_loss = float('inf')
+best_val_metrics = {"IoU": 0, "Dice": 0}
+best_model_path = "best_model.pth"
+patience = 20
+early_stopping_counter = 0
+
 for epoch in range(num_epochs):
     start_time = time.time()
     
@@ -281,10 +286,9 @@ for epoch in range(num_epochs):
     for img_patch, mask_patch in train_dataloader:
         img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.float32)
         optimizer.zero_grad()
-        img_patch = img_patch.permute(1, 0, 2, 3, 4)  #
-        mask_patch = mask_patch.permute(1, 0, 2, 3, 4)  #
+        img_patch = img_patch.permute(1, 0, 2, 3, 4)
+        mask_patch = mask_patch.permute(1, 0, 2, 3, 4)
         outputs, logits = model(img_patch, return_logits=True)
-        # mask_patch = mask_patch.unsqueeze(1)  #
         loss = criterion(logits, mask_patch)
         metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
         total_loss += loss.item()
@@ -308,10 +312,9 @@ for epoch in range(num_epochs):
     with torch.no_grad():
         for img_patch, mask_patch in val_dataloader:
             img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.long)
-            img_patch = img_patch.permute(1, 0, 2, 3, 4)  #
-            mask_patch = mask_patch.permute(1, 0, 2, 3, 4)   #
+            img_patch = img_patch.permute(1, 0, 2, 3, 4)
+            mask_patch = mask_patch.permute(1, 0, 2, 3, 4)
             outputs, logits = model(img_patch, return_logits=True)
-            # mask_patch = mask_patch.unsqueeze(1)  #
             loss = criterion(logits, mask_patch)
             metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
             val_loss += loss.item()
@@ -321,6 +324,19 @@ for epoch in range(num_epochs):
     avg_val_loss = val_loss / num_val_batches
     avg_val_iou = val_iou / num_val_batches
     avg_val_dice = val_dice / num_val_batches
+
+    if avg_val_loss < best_val_loss and (avg_val_iou > best_val_metrics["IoU"] or avg_val_dice > best_val_metrics["Dice"]):
+        best_val_loss = avg_val_loss
+        best_val_metrics = {"IoU": avg_val_iou, "Dice": avg_val_dice}
+        torch.save(model.state_dict(), best_model_path)
+        print(f"Saved best model with Val Loss: {best_val_loss:.4f}, Val IoU: {best_val_metrics['IoU']:.4f}, Val Dice: {best_val_metrics['Dice']:.4f}")
+        early_stopping_counter = 0
+    else:
+        early_stopping_counter += 1
+
+    if early_stopping_counter >= patience:
+        print(f"Early stopping triggered after {epoch+1} epochs.")
+        break
 
     end_time = time.time()
     epoch_time = end_time - start_time
