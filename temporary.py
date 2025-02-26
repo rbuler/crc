@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 
 sys.path.append('/home/r_buler/coding/crc/pytorch-3dunet/')
 from pytorch3dunet.unet3d.model import UNet3D
+import monai.transforms as mt
 from monai.losses import TverskyLoss
 from monai.metrics import DiceMetric, MeanIoU
 # from pytorch3dunet.unet3d.losses import DiceLoss
@@ -61,6 +62,7 @@ class CRCDataset(Dataset):
         self.instance_masks_path = []
         self.mapping_path = []
         self.transforms = transforms
+        self.train_mode = False
 
         nii_pth = os.path.join(self.root, self.nii_dir)
 
@@ -127,6 +129,10 @@ class CRCDataset(Dataset):
         return selected_patches
 
 
+    def set_mode(self, train_mode):
+        self.train_mode = train_mode
+
+
     def __getitem__(self, idx):
         image_path = self.images_path[idx]
         mask_path = self.masks_path[idx]
@@ -181,10 +187,10 @@ class CRCDataset(Dataset):
         #     json.dump({'image': image_path, 'mask': mask_path, 'boxes': bboxes['boxes'].tolist(), 'labels': bboxes['labels'].tolist() }, f)
         # return image_path, mask_path, bboxes
         
-        if self.transforms is not None:
-            img_patch, mask_patch = self.transforms(img_patch, mask_patch)
-
-
+        if (self.transforms is not None) and self.train_mode:
+            data_to_transform = {"image": img_patch, "mask": mask_patch}
+            transformed_patches = self.transforms(data_to_transform)
+            img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
 
         return img_patch, mask_patch, image, mask
         # return image, mask , bboxes, instance_mask
@@ -212,13 +218,27 @@ def evaluate_segmentation(pred_logits, true_mask, num_classes=7):
         "Dice": mean_dice,
     }
 # %%
+transforms = mt.Compose([
+    mt.RandFlipd(keys=["image", "mask"], spatial_axis=0, prob=0.5),
+    mt.RandFlipd(keys=["image", "mask"], spatial_axis=1, prob=0.5),
+    mt.RandFlipd(keys=["image", "mask"], spatial_axis=2, prob=0.5),
+    mt.RandRotate90d(keys=["image", "mask"], prob=0.5, max_k=3),
+    mt.RandGaussianNoised(keys=["image"], prob=0.2, mean=0.0, std=0.01),
+    mt.RandAdjustContrastd(keys=["image"], prob=0.2, gamma=(0.9, 1.1)),
+    mt.RandScaleIntensityd(keys=["image"], factors=0.1, prob=0.2),
+    mt.RandZoomd(keys=["image", "mask"], min_zoom=0.9, max_zoom=1.1, prob=0.3),
+    mt.Rand3DElasticd(keys=["image", "mask"], prob=0.2, sigma_range=(1, 2), magnitude_range=(1, 3)),
+    mt.NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
+    # mt.ToTensord(keys=["image", "mask"])
+])
+
 patch_size = (96, 96, 32)  # (H, W, D)
 stride = 32
 batch_size = 1
 
 dataset = CRCDataset(root_dir=config['dir']['root'],
                         nii_dir=config['dir']['nii_images'],
-                        transforms=None,
+                        transforms=transforms,
                         patch_size=patch_size,
                         stride=stride,
                         num_patches_per_sample=100)
@@ -242,9 +262,9 @@ test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_work
 
 num_classes = 1
 model = UNet3D(in_channels=1, out_channels=num_classes, final_sigmoid=True).to(device)
-criterion = TverskyLoss(softmax=False, sigmoid=True, to_onehot_y=False)
+criterion = TverskyLoss(alpha=0.25, beta=0.75, softmax=False, sigmoid=True, to_onehot_y=False)
 
-optimizer = optim.Adam(model.parameters(), lr=0.0001)
+optimizer = optim.Adam(model.parameters(), lr=1e-5, weight_decay=1e-4)
 
 # %%
 num_epochs = 2000
@@ -252,13 +272,14 @@ for epoch in range(num_epochs):
     start_time = time.time()
     
     model.train()
+    train_dataloader.dataset.dataset.set_mode(train_mode=True)
     total_loss = 0
     total_iou = 0
     total_dice = 0
     num_batches = len(train_dataloader)
     
     for img_patch, mask_patch in train_dataloader:
-        img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.long)
+        img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.float32)
         optimizer.zero_grad()
         img_patch = img_patch.permute(1, 0, 2, 3, 4)  #
         mask_patch = mask_patch.permute(1, 0, 2, 3, 4)  #
@@ -278,6 +299,7 @@ for epoch in range(num_epochs):
     avg_dice = total_dice / num_batches
 
     model.eval()
+    val_dataloader.dataset.dataset.set_mode(train_mode=False)
     val_loss = 0
     val_iou = 0
     val_dice = 0
@@ -338,6 +360,7 @@ def sliding_window_inference(image, model, patch_size, stride, device):
     return output
 
 model.eval()
+test_dataloader.dataset.dataset.set_mode(train_mode=False)
 for _, _, image, mask in test_dataloader:
     image = image.to(device, dtype=torch.float32)
     pred_logits = sliding_window_inference(image, model, patch_size=patch_size,  stride=stride, device=device)
