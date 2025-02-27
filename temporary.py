@@ -196,26 +196,43 @@ class CRCDataset(Dataset):
 
 
 def evaluate_segmentation(pred_logits, true_mask, num_classes=7):
-
     pred_probs = torch.sigmoid(pred_logits) if num_classes == 1 else torch.softmax(pred_logits, dim=1)
     pred_labels = torch.argmax(pred_probs, dim=1) if num_classes > 1 else (pred_probs > 0.5).long()
 
     dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
     mean_iou_metric = MeanIoU(include_background=True, reduction="mean", get_not_nans=False)
 
-    dice_metric(y_pred=pred_labels, y=true_mask)
-    mean_iou_metric(y_pred=pred_labels, y=true_mask)
+    valid_pred_labels = []
+    valid_true_masks = []
 
-    mean_dice = dice_metric.aggregate().item()
-    mean_iou = mean_iou_metric.aggregate().item()
+    for i in range(true_mask.shape[0]):
+        if torch.any(true_mask[i] > 0):
+            valid_pred_labels.append(pred_labels[i].unsqueeze(0))
+            valid_true_masks.append(true_mask[i].unsqueeze(0))
 
-    dice_metric.reset()
-    mean_iou_metric.reset()
+    if valid_pred_labels:
+        valid_pred_labels = torch.cat(valid_pred_labels, dim=0)
+        valid_true_masks = torch.cat(valid_true_masks, dim=0)
 
-    return {
-        "IoU": mean_iou,
-        "Dice": mean_dice,
-    }
+        dice_metric(y_pred=valid_pred_labels, y=valid_true_masks)
+        mean_iou_metric(y_pred=valid_pred_labels, y=valid_true_masks)
+
+        mean_dice = dice_metric.aggregate().item()
+        mean_iou = mean_iou_metric.aggregate().item()
+
+        dice_metric.reset()
+        mean_iou_metric.reset()
+
+        return {
+            "IoU": mean_iou,
+            "Dice": mean_dice,
+        }
+    else:
+        return {
+            # rare case if all batch samples have no foreground pixels
+            "IoU": 0.0,
+            "Dice": 0.0,
+        }
 # %%
 transforms = mt.Compose([
     mt.RandFlipd(keys=["image", "mask"], spatial_axis=0, prob=0.5),
@@ -232,7 +249,7 @@ transforms = mt.Compose([
 ])
 
 patch_size = (96, 96, 32)  # (H, W, D)
-stride = 32
+stride = 16
 batch_size = 1
 
 dataset = CRCDataset(root_dir=config['dir']['root'],
@@ -242,8 +259,8 @@ dataset = CRCDataset(root_dir=config['dir']['root'],
                         stride=stride,
                         num_patches_per_sample=100)
 
-train_size = int(0.8 * len(dataset))
-val_size = int(0.1 * len(dataset))
+train_size = int(0.7 * len(dataset))
+val_size = int(0.3 * len(dataset))
 test_size = len(dataset) - train_size - val_size
 train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
 
@@ -270,7 +287,7 @@ num_epochs = 2000
 best_val_loss = float('inf')
 best_val_metrics = {"IoU": 0, "Dice": 0}
 best_model_path = "best_model.pth"
-patience = 20
+patience = 2000
 early_stopping_counter = 0
 
 for epoch in range(num_epochs):
@@ -289,6 +306,7 @@ for epoch in range(num_epochs):
         img_patch = img_patch.permute(1, 0, 2, 3, 4)
         mask_patch = mask_patch.permute(1, 0, 2, 3, 4)
         outputs, logits = model(img_patch, return_logits=True)
+        # logits shape (B, C, H, W, D)
         loss = criterion(logits, mask_patch)
         metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
         total_loss += loss.item()
