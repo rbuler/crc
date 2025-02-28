@@ -1,6 +1,16 @@
 seed: 42
 device: 'cuda:0'
-neptune: True
+neptune: False
+
+training:
+  num_classes: 1
+  patch_size: [128,128,64]
+  stride: []
+  batch_size: 4
+  epochs: 1000
+  patience: 50
+  lr: 0.0001
+  optimizer: 'adam' # 'sgd'
 
 dir:
   root: '/media/dysk_a/jr_buler/RJG-gumed/'
