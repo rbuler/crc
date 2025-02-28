@@ -6,6 +6,7 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from ipywidgets import interact, IntSlider
+import matplotlib.patches as patches
 
 def find_unique_value_mapping(mask1, mask2) -> dict:
     """
@@ -253,3 +254,83 @@ def get_2d_bounding_boxes(segmentation, mapping_path, plane='xy'):
             )
 
     return bounding_boxes_per_slice
+
+
+def interactive_slice_viewer(data, axis=2, label=None):
+    """
+    IPython interactive viewer for 3D medical images with masks and bounding boxes.
+
+    Args:
+        data (dict): Dictionary with keys ['image', 'mask', 'boxes']
+        axis (int): Axis along which to slice (0=sagittal, 1=coronal, 2=axial)
+    """
+    # Extract data
+    image = data['image'].squeeze(0).numpy()  # (224, 224, 64)
+    if label:
+        mask = data['mask'].squeeze(0).numpy() == label
+    else:
+        mask = data['mask'].squeeze(0).numpy()    # (224, 224, 64)
+    boxes = data['boxes']           # (N, 6) -> (xmin, ymin, zmin, xmax, ymax, zmax)
+
+    num_slices = image.shape[axis]  # Number of slices along chosen axis
+    print(f"{num_slices=}")
+    def get_slice(data, axis, idx):
+        """Extract a 2D slice from a 3D volume."""
+        if axis == 0:
+            return data[idx, :, :]
+        elif axis == 1:
+            return data[:, idx, :]
+        else:
+            return data[:, :, idx]
+
+    def get_2d_boxes(boxes, axis, idx):
+        """Filter and transform 3D boxes to 2D for the current slice."""
+        filtered_boxes = []
+        for box in boxes:
+            Hmin, Wmin, Dmin, Hmax, Wmax, Dmax = box
+            if axis == 2 and Dmin <= idx <= Dmax:
+                filtered_boxes.append([Hmin, Wmin, Hmax, Wmax])
+            elif axis == 1 and Wmin <= idx <= Wmax:
+                filtered_boxes.append([Hmin, Dmin, Hmax, Dmax])
+            elif axis == 0 and Hmin <= idx <= Hmax:
+                filtered_boxes.append([Wmin, Dmin, Wmax, Dmax])
+        return filtered_boxes
+
+    def plot_slice(idx):
+        """Plot image, mask, and bounding boxes for a given slice."""
+        img_slice = get_slice(image, axis, idx)
+        mask_slice = get_slice(mask, axis, idx)
+        boxes_2d = get_2d_boxes(boxes, axis, idx)
+
+        # Plot Image
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+        # Plot Image
+        axes[0].imshow(img_slice, cmap='gray', alpha=0.8)
+        axes[0].set_title(f'Image (Slice {idx})')
+
+        # Plot Mask
+        axes[1].imshow(mask_slice, cmap='jet', alpha=0.6)
+        axes[1].set_title(f'Mask (Slice {idx})')
+
+        # Plot Bounding Boxes
+        axes[2].imshow(img_slice, cmap='gray', alpha=0.8)
+        for box in boxes_2d:
+            # matplotlib coords x-y
+            ymin, xmin, ymax, xmax = box
+            print(f"{xmin=}, {ymin=}, {xmax=}, {ymax=}")
+            width, height = xmax - xmin, ymax - ymin
+            rect = patches.Rectangle(
+            (xmin, ymin), width, height, linewidth=1.5, edgecolor='r', facecolor='none'
+            )
+            axes[2].add_patch(rect)
+        axes[2].set_xlim(0, img_slice.shape[1])
+        axes[2].set_ylim(img_slice.shape[0], 0)
+        axes[2].set_title(f'Bounding Boxes (Slice {idx})')
+        axes[2].set_aspect('equal', adjustable='box')
+
+        plt.tight_layout()
+        plt.show()
+
+
+    interact(plot_slice, idx=IntSlider(min=0, max=num_slices-1, step=1, value=num_slices//2))
