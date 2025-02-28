@@ -5,8 +5,9 @@ import sys
 import yaml
 import time
 import torch
-import random
 import utils
+import random
+import neptune
 import logging
 import numpy as np
 import nibabel as nib
@@ -16,7 +17,7 @@ from torch.utils.data import DataLoader
 from pytorch3dunet.unet3d.model import UNet3D
 import monai.transforms as mt
 
-from monai.losses import TverskyLoss
+from monai.losses import TverskyLoss, FocalLoss
 from monai.metrics import DiceMetric, MeanIoU
 # from pytorch3dunet.unet3d.losses import DiceLoss
 
@@ -34,6 +35,17 @@ args, unknown = parser.parse_known_args()
 with open(args.config_path) as file:
     config = yaml.load(file, Loader=yaml.FullLoader)
 
+
+num_classes = config['training']['num_classes']
+patch_size = tuple(map(int, config['training']['patch_size']))
+stride = config['training']['stride']
+batch_size = config['training']['batch_size']
+num_epochs = config['training']['epochs']
+patience = config['training']['patience']
+lr = config['training']['lr']
+optimizer = config['training']['optimizer']
+
+
 # SET FIXED SEED FOR REPRODUCIBILITY --------------------------------
 seed = config['seed']
 np.random.seed(seed)
@@ -42,6 +54,13 @@ torch.cuda.manual_seed(seed)
 
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
+if config['neptune']:
+    run = neptune.init_run(project="ProjektMMG/CRC")
+    run["parameters/config"] = str(config)
+    run["sys/group_tags"].add(["Seg3D"])
+else:
+    run = None
+    
 # %%
 class CRCDataset(Dataset):
     def __init__(self, root_dir: os.PathLike,
@@ -233,6 +252,19 @@ def evaluate_segmentation(pred_logits, true_mask, num_classes=7):
             "IoU": 0.0,
             "Dice": 0.0,
         }
+    
+class HybridLoss(torch.nn.Module):
+    def __init__(self, alpha=0.25, beta=0.75, gamma=2.0):
+        super(HybridLoss, self).__init__()
+        self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
+        self.focal_loss = FocalLoss()
+        self.gamma = gamma
+
+    def forward(self, logits, targets):
+        tversky_loss = self.tversky_loss(logits, targets)
+        focal_loss = self.focal_loss(logits, targets)
+        return tversky_loss + focal_loss
+
 # %%
 transforms = mt.Compose([
     mt.RandFlipd(keys=["image", "mask"], spatial_axis=0, prob=0.5),
@@ -248,10 +280,6 @@ transforms = mt.Compose([
     # mt.ToTensord(keys=["image", "mask"])
 ])
 
-patch_size = (96, 96, 32)  # (H, W, D)
-stride = 16
-batch_size = 1
-
 dataset = CRCDataset(root_dir=config['dir']['root'],
                         nii_dir=config['dir']['nii_images'],
                         transforms=transforms,
@@ -262,6 +290,11 @@ dataset = CRCDataset(root_dir=config['dir']['root'],
 train_size = int(0.7 * len(dataset))
 val_size = int(0.3 * len(dataset))
 test_size = len(dataset) - train_size - val_size
+
+if run:
+    run["dataset/train_size"] = train_size
+    run["dataset/val_size"] = val_size
+    run["dataset/test_size"] = test_size
 train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
 
 # dataloader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=0)
@@ -276,18 +309,16 @@ train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True
 val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0, collate_fn=collate_fn)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
 
-num_classes = 1
 model = UNet3D(in_channels=1, out_channels=num_classes, final_sigmoid=True).to(device)
-criterion = TverskyLoss(alpha=0.25, beta=0.75, softmax=False, sigmoid=True, to_onehot_y=False)
+criterion = HybridLoss(alpha=0.25, beta=0.75, gamma=2.0)
 
-optimizer = optim.Adam(model.parameters(), lr=1e-5, weight_decay=1e-4)
+if optimizer == "adam":
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
 
 # %%
-num_epochs = 2000
 best_val_loss = float('inf')
 best_val_metrics = {"IoU": 0, "Dice": 0}
 best_model_path = "best_model.pth"
-patience = 2000
 early_stopping_counter = 0
 
 for epoch in range(num_epochs):
@@ -306,10 +337,9 @@ for epoch in range(num_epochs):
         img_patch = img_patch.permute(1, 0, 2, 3, 4)
         mask_patch = mask_patch.permute(1, 0, 2, 3, 4)
         outputs, logits = model(img_patch, return_logits=True)
-        # logits shape (B, C, H, W, D)
         loss = criterion(logits, mask_patch)
         metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
-        total_loss += loss.item()
+        total_loss += loss.detach().item()
         total_iou += metrics["IoU"]
         total_dice += metrics["Dice"]
         
@@ -320,6 +350,12 @@ for epoch in range(num_epochs):
     avg_iou = total_iou / num_batches
     avg_dice = total_dice / num_batches
 
+    if run:
+        run["train/loss_fn"] = criterion.__class__.__name__
+        run["train/loss"].log(avg_loss)
+        run["train/IoU"].log(avg_iou)
+        run["train/Dice"].log(avg_dice)
+
     model.eval()
     val_dataloader.dataset.dataset.set_mode(train_mode=False)
     val_loss = 0
@@ -329,31 +365,39 @@ for epoch in range(num_epochs):
     
     with torch.no_grad():
         for img_patch, mask_patch in val_dataloader:
-            img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.long)
+            img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.float32)
             img_patch = img_patch.permute(1, 0, 2, 3, 4)
             mask_patch = mask_patch.permute(1, 0, 2, 3, 4)
             outputs, logits = model(img_patch, return_logits=True)
             loss = criterion(logits, mask_patch)
             metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
-            val_loss += loss.item()
+            val_loss += loss.detach().item()
             val_iou += metrics["IoU"]
             val_dice += metrics["Dice"]
-    
+
     avg_val_loss = val_loss / num_val_batches
     avg_val_iou = val_iou / num_val_batches
     avg_val_dice = val_dice / num_val_batches
 
-    if avg_val_loss < best_val_loss and (avg_val_iou > best_val_metrics["IoU"] or avg_val_dice > best_val_metrics["Dice"]):
+    if run:
+        run["val/loss"].log(avg_val_loss)
+        run["val/IoU"].log(avg_val_iou)
+        run["val/Dice"].log(avg_val_dice)
+
+    if avg_val_loss < best_val_loss:
         best_val_loss = avg_val_loss
         best_val_metrics = {"IoU": avg_val_iou, "Dice": avg_val_dice}
-        torch.save(model.state_dict(), best_model_path)
-        print(f"Saved best model with Val Loss: {best_val_loss:.4f}, Val IoU: {best_val_metrics['IoU']:.4f}, Val Dice: {best_val_metrics['Dice']:.4f}")
+        best_model = model.state_dict()
         early_stopping_counter = 0
     else:
         early_stopping_counter += 1
 
     if early_stopping_counter >= patience:
         print(f"Early stopping triggered after {epoch+1} epochs.")
+        print(f"Saved best model with Val Loss: {best_val_loss:.4f}, Val IoU: {best_val_metrics['IoU']:.4f}, Val Dice: {best_val_metrics['Dice']:.4f}")
+        torch.save(best_model, best_model_path)
+        if run:
+            run["model/best"].upload(best_model_path)
         break
 
     end_time = time.time()
@@ -364,7 +408,6 @@ for epoch in range(num_epochs):
           f"Train Loss: {avg_loss:.4f}, Train IoU: {avg_iou:.4f}, Train Dice: {avg_dice:.4f}, "
           f"Val Loss: {avg_val_loss:.4f}, Val IoU: {avg_val_iou:.4f}, Val Dice: {avg_val_dice:.4f}, "
           f"Time: {epoch_time_hms}")
-
 # %%
 # inference test with sliding window
 
@@ -387,6 +430,7 @@ def sliding_window_inference(image, model, patch_size, stride, device):
                     img_patch = image[:, h:h+h_size, w:w+w_size, d:d+d_size].to(device, dtype=torch.float32)
                     img_patch = img_patch.unsqueeze(0)
                     _, logits = model(img_patch, return_logits=True)
+                    # add logits or preds to output tensor TODO: check if this is correct
                     output[:, h:h+h_size, w:w+w_size, d:d+d_size] += logits.squeeze(0)
                     count_map[:, h:h+h_size, w:w+w_size, d:d+d_size] += 1
 
