@@ -1,5 +1,6 @@
 seed: 42
 device: 'cuda:0'
+neptune: True
 
 dir:
   root: '/media/dysk_a/jr_buler/RJG-gumed/'
@@ -11,7 +12,7 @@ dir:
 
 
 radiomics:  
-  action: 'extract' # 'extract' to extract radiomics, 'load' to load from pkl
+  action: 'load' # 'extract' to extract radiomics, 'load' to load from pkl
   mode: 'parallel' #serial, parallel
   n_processes: 2 # for parallel mode only; if None, use [(all available) - 1] cores
   save: False # True, False; for action 'extract'
