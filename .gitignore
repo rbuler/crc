@@ -1,3 +1,4 @@
 __pycache__
 pytorch3dunet
 best_model.pth
+.neptune
