@@ -18,7 +18,6 @@ from monai.transforms import (
     EnsureTyped,
     LoadImaged,
     Orientationd,
-    Transposed,
     CropForegroundd,
     RandSpatialCropd,
     Spacingd,
@@ -36,8 +35,6 @@ from monai.transforms import (
     MapTransform,
     ToTensord,
 )
-from monai.transforms.utility.dictionary import ApplyTransformToPointsd
-from monai.transforms.spatial.dictionary import ConvertBoxToPointsd, ConvertPointsToBoxesd
 from monai.apps.detection.transforms.dictionary import (
     AffineBoxToImageCoordinated,
     AffineBoxToWorldCoordinated,
@@ -47,14 +44,9 @@ from monai.apps.detection.transforms.dictionary import (
     ConvertBoxToStandardModed,
     ConvertBoxModed,
     MaskToBoxd,
-    ConvertBoxModed,
     StandardizeEmptyBoxd,
 )
 from monai.config import KeysCollection
-from monai.utils.type_conversion import convert_data_type
-from monai.data.box_utils import clip_boxes_to_image
-from monai.apps.detection.transforms.box_ops import convert_box_to_mask
-
 
 def generate_detection_train_transform(
     image_key,
@@ -69,7 +61,8 @@ def generate_detection_train_transform(
     train_transforms = Compose(
         [
             LoadImaged(keys=[image_key, mask_key], image_only=False, meta_key_postfix="meta_dict"),
-            EnsureChannelFirstd(keys=[image_key, mask_key]),
+            SqueezeAllDimsd(keys=[image_key, mask_key]),
+            # EnsureChannelFirstd(keys=[image_key, mask_key]),
             EnsureTyped(keys=[image_key, mask_key, box_key], dtype=torch.float32),
             EnsureTyped(keys=[label_key], dtype=torch.long),
             # StandardizeEmptyBoxd(box_keys=[box_key], box_ref_image_keys=image_key),
@@ -83,7 +76,7 @@ def generate_detection_train_transform(
                 pos=1,
                 neg=1,
                 num_samples=batch_size,
-                whole_box=False,
+                whole_box=True,
                 # thresh_image_key=thresh_image_key,
                 # image_threshold=image_threshold,
                 # fg_indices_key=fg_indices_key,
@@ -93,6 +86,7 @@ def generate_detection_train_transform(
                 allow_smaller=False,
                 # allow_missing_keys=allow_missing_keys,
             ),
+                 # MatchBoxCoordinates(keys=["boxes"]), # x to H, y to W, z to D
             RandGaussianNoised(keys=[image_key], prob=0.1, mean=0, std=0.1),
             RandGaussianSmoothd(
                 keys=[image_key],
@@ -111,7 +105,6 @@ def generate_detection_train_transform(
         ]
     )
     return train_transforms
-
 
 
 def generate_detection_val_transform(
@@ -200,72 +193,30 @@ def generate_detection_inference_transform(
     )
     return test_transforms, post_transforms
 
-
-class GenerateExtendedBoxMask(MapTransform):
+class MatchBoxCoordinates(MapTransform):
     """
-    Generate box mask based on the input boxes.
+    Match x to H, y to W, z to D for the boxes in the data dictionary.
     """
 
-    def __init__(
-        self,
-        keys: KeysCollection,
-        image_key: str,
-        spatial_size: tuple[int, int, int],
-        whole_box: bool,
-        mask_image_key: str = "mask_image",
-    ) -> None:
+    def __init__(self, keys: KeysCollection) -> None:
         """
         Args:
             keys: keys of the corresponding items to be transformed.
-            image_key: key for the image data in the dictionary.
-            spatial_size: size of the spatial dimensions of the mask.
-            whole_box: whether to use the whole box for generating the mask.
-            mask_image_key: key to store the generated box mask.
         """
         super().__init__(keys)
-        self.image_key = image_key
-        self.spatial_size = spatial_size
-        self.whole_box = whole_box
-        self.mask_image_key = mask_image_key
-
-    def generate_fg_center_boxes_np(self, boxes, image_size, whole_box=True):
-        # We don't require crop center to be within the boxes.
-        # As along as the cropped patch contains a box, it is considered as a foreground patch.
-        # Positions within extended_boxes are crop centers for foreground patches
-        spatial_dims = len(image_size)
-        boxes_np, *_ = convert_data_type(boxes, np.ndarray)
-
-        extended_boxes = np.zeros_like(boxes_np, dtype=int)
-        boxes_start = np.ceil(boxes_np[:, :spatial_dims]).astype(int)
-        boxes_stop = np.floor(boxes_np[:, spatial_dims:]).astype(int)
-        for axis in range(spatial_dims):
-            if not whole_box:
-                extended_boxes[:, axis] = boxes_start[:, axis] - self.spatial_size[axis] // 2 + 1
-                extended_boxes[:, axis + spatial_dims] = boxes_stop[:, axis] + self.spatial_size[axis] // 2 - 1
-            else:
-                # extended box start
-                extended_boxes[:, axis] = boxes_stop[:, axis] - self.spatial_size[axis] // 2 - 1
-                extended_boxes[:, axis] = np.minimum(extended_boxes[:, axis], boxes_start[:, axis])
-                # extended box stop
-                extended_boxes[:, axis + spatial_dims] = extended_boxes[:, axis] + self.spatial_size[axis] // 2
-                extended_boxes[:, axis + spatial_dims] = np.maximum(
-                    extended_boxes[:, axis + spatial_dims], boxes_stop[:, axis]
-                )
-        extended_boxes, _ = clip_boxes_to_image(extended_boxes, image_size, remove_empty=True)  # type: ignore
-        return extended_boxes
-
-    def generate_mask_img(self, boxes, image_size, whole_box=True):
-        extended_boxes_np = self.generate_fg_center_boxes_np(boxes, image_size, whole_box)
-        mask_img = convert_box_to_mask(
-            extended_boxes_np, np.ones(extended_boxes_np.shape[0]), image_size, bg_label=0, ellipse_mask=False
-        )
-        mask_img = np.amax(mask_img, axis=0, keepdims=True)[0:1, ...]
-        return mask_img
 
     def __call__(self, data):
         d = dict(data)
         for key in self.key_iterator(d):
-            image = d[self.image_key]
-            boxes = d[key]
-            data[self.mask_image_key] = self.generate_mask_img(boxes, image.shape[1:], whole_box=self.whole_box)
-        return data
+            d[key] = np.array([[box[1], box[0], box[2], box[4], box[3], box[5]] for box in d[key]])
+        return d
+
+class SqueezeAllDimsd(MapTransform):
+    """
+    Custom transform to remove all singleton dimensions from image and mask.
+    """
+    def __call__(self, data):
+        d = dict(data)
+        for key in self.keys:
+            d[key] = d[key].squeeze().unsqueeze(0)  # Remove all dimensions with size=1
+        return d
