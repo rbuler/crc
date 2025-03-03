@@ -56,7 +56,7 @@ device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 if config['neptune']:
     run = neptune.init_run(project="ProjektMMG/CRC")
-    run["parameters/config"] = str(config)
+    run["parameters/config"] = config
     run["sys/group_tags"].add(["Seg3D"])
 else:
     run = None
@@ -193,7 +193,7 @@ class CRCDataset(Dataset):
 
         patches = self.extract_patches(image, mask)
         # img_patch, mask_patch = random.choice(patches)
-        selected_patches = random.sample(patches, 16)
+        selected_patches = random.sample(patches, 8)
         img_patch = torch.stack([p[0] for p in selected_patches])
         mask_patch = torch.stack([p[1] for p in selected_patches])
         # img_patch = img_patch.unsqueeze(0)
@@ -207,7 +207,11 @@ class CRCDataset(Dataset):
         
         if (self.transforms is not None) and self.train_mode:
             data_to_transform = {"image": img_patch, "mask": mask_patch}
-            transformed_patches = self.transforms(data_to_transform)
+            transformed_patches = self.transforms[0](data_to_transform)  # train_transforms
+            img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
+        elif (self.transforms is not None) and not self.train_mode:
+            data_to_transform = {"image": img_patch, "mask": mask_patch}
+            transformed_patches = self.transforms[1](data_to_transform)  # val_transforms
             img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
 
         return img_patch, mask_patch, image, mask
@@ -266,19 +270,30 @@ class HybridLoss(torch.nn.Module):
         return tversky_loss + focal_loss
 
 # %%
-transforms = mt.Compose([
-    mt.RandFlipd(keys=["image", "mask"], spatial_axis=0, prob=0.5),
-    mt.RandFlipd(keys=["image", "mask"], spatial_axis=1, prob=0.5),
-    mt.RandFlipd(keys=["image", "mask"], spatial_axis=2, prob=0.5),
-    mt.RandRotate90d(keys=["image", "mask"], prob=0.5, max_k=3),
-    mt.RandGaussianNoised(keys=["image"], prob=0.2, mean=0.0, std=0.01),
-    mt.RandAdjustContrastd(keys=["image"], prob=0.2, gamma=(0.9, 1.1)),
-    mt.RandScaleIntensityd(keys=["image"], factors=0.1, prob=0.2),
+train_transforms = mt.Compose([
+    mt.EnsureTyped(keys=["image", "mask"]),
+    mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=0),
+    mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=1),
+    mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=2),
+    mt.RandRotated(keys=["image", "mask"], range_x=0.1, range_y=0.1, range_z=0.1, prob=0.3),
+    mt.RandAffined(keys=["image", "mask"], prob=0.3, scale_range=(0.1, 0.1, 0.1), 
+                rotate_range=(0.1, 0.1, 0.1), mode=("bilinear", "nearest")),
     mt.RandZoomd(keys=["image", "mask"], min_zoom=0.9, max_zoom=1.1, prob=0.3),
-    mt.Rand3DElasticd(keys=["image", "mask"], prob=0.2, sigma_range=(1, 2), magnitude_range=(1, 3)),
-    mt.NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
-    # mt.ToTensord(keys=["image", "mask"])
+    mt.RandGaussianNoised(keys="image", prob=0.2, mean=0.0, std=0.05),
+    mt.RandGaussianSmoothd(keys="image", prob=0.2, sigma_x=(0.5, 1.5)),
+    mt.RandAdjustContrastd(keys="image", prob=0.2, gamma=(0.7, 1.3)),
+    mt.RandScaleIntensityd(keys="image", factors=0.1, prob=0.3),
+    mt.RandShiftIntensityd(keys="image", offsets=0.1, prob=0.3),
+    mt.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+    mt.EnsureTyped(keys=["image", "mask"])
 ])
+
+val_transforms = mt.Compose([
+    mt.EnsureTyped(keys=["image", "mask"]),
+    mt.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+    mt.EnsureTyped(keys=["image", "mask"])
+])
+transforms = [train_transforms, val_transforms]
 
 dataset = CRCDataset(root_dir=config['dir']['root'],
                         nii_dir=config['dir']['nii_images'],
@@ -287,8 +302,8 @@ dataset = CRCDataset(root_dir=config['dir']['root'],
                         stride=stride,
                         num_patches_per_sample=100)
 
-train_size = int(0.7 * len(dataset))
-val_size = int(0.3 * len(dataset))
+train_size = int(0.8 * len(dataset))
+val_size = int(0.15 * len(dataset))
 test_size = len(dataset) - train_size - val_size
 
 if run:
@@ -391,6 +406,9 @@ for epoch in range(num_epochs):
         early_stopping_counter = 0
     else:
         early_stopping_counter += 1
+    
+    if run:
+        run["val/patience_counter"] = early_stopping_counter
 
     if early_stopping_counter >= patience:
         print(f"Early stopping triggered after {epoch+1} epochs.")
