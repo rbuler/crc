@@ -150,10 +150,16 @@ def detection_collate_fn(batch):
     return images, targets
 
 train_dataset = Dataset(data=train_files, transform=train_transforms)
-train_loader = DataLoader(train_dataset, batch_size=1, num_workers=4, collate_fn=detection_collate_fn)
+train_loader = DataLoader(train_dataset,
+                          batch_size=1, num_workers=4,
+                          collate_fn=detection_collate_fn,
+                          shuffle=True)
 
 val_dataset = Dataset(data=val_files, transform=val_transforms)
-val_loader = DataLoader(val_dataset, batch_size=1, num_workers=4, collate_fn=detection_collate_fn)
+val_loader = DataLoader(val_dataset,
+                        batch_size=1, num_workers=4,
+                        collate_fn=detection_collate_fn,
+                        shuffle=False)
 # check_masks_inside_boxes(train_loader, label=1) # 197a 204a no mask
 # check_masks_inside_boxes(val_loader, label=1)
 # %%
