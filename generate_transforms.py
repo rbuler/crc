@@ -18,33 +18,18 @@ from monai.transforms import (
     EnsureTyped,
     LoadImaged,
     Orientationd,
-    CropForegroundd,
-    RandSpatialCropd,
-    Spacingd,
     RandAdjustContrastd,
     RandGaussianNoised,
     RandGaussianSmoothd,
-    RandRotated,
     RandScaleIntensityd,
     RandShiftIntensityd,
-    RandCropByPosNegLabeld,
-    RandCropByLabelClassesd,
-    RandZoomd,
-    RandFlipd,
-    RandRotate90d,
     MapTransform,
-    ToTensord,
 )
 from monai.apps.detection.transforms.dictionary import (
-    AffineBoxToImageCoordinated,
     AffineBoxToWorldCoordinated,
-    BoxToMaskd,
     ClipBoxToImaged,
     RandCropBoxByPosNegLabeld,
-    ConvertBoxToStandardModed,
     ConvertBoxModed,
-    MaskToBoxd,
-    StandardizeEmptyBoxd,
 )
 from monai.config import KeysCollection
 
@@ -101,7 +86,6 @@ def generate_detection_train_transform(
             EnsureTyped(keys=[image_key, box_key], dtype=torch.float32),
             EnsureTyped(keys=[label_key], dtype=torch.long),
             DeleteItemsd(keys=["image_meta_dict", "mask_meta_dict"]),
-
         ]
     )
     return train_transforms
