@@ -197,9 +197,9 @@ class CRCDataset(Dataset):
 
         self.clinical_data['TNM wg mnie'] = self.clinical_data['TNM wg mnie'].apply(make_lower_case)
     
-        self.clinical_data['wmT'] = self.clinical_data['TNM wg mnie'].str.extract(r'T([0-9]+[a-b]?|x|is)?')
-        self.clinical_data['wmN'] = self.clinical_data['TNM wg mnie'].str.extract(r'N([0-9]+[a-c]?)?')
-        self.clinical_data['wmM'] = self.clinical_data['TNM wg mnie'].str.extract(r'M([0-9]+)?')
+        self.clinical_data['wmT'] = self.clinical_data['TNM wg mnie'].str.extract(r'T([0-4]+[a-b]?|x|is)?')
+        self.clinical_data['wmN'] = self.clinical_data['TNM wg mnie'].str.extract(r'N([0-3]+[a-c]?)?')
+        self.clinical_data['wmM'] = self.clinical_data['TNM wg mnie'].str.extract(r'M([0-1]+)?')
 
 
     def _compute_overstaging_tnm(self, wm_column: str, p_column: str, category_order: dict, result_column: str):
