@@ -10,6 +10,7 @@ import random
 import neptune
 import logging
 import numpy as np
+import pandas as pd
 import nibabel as nib
 import torch.optim as optim
 from torch.utils.data import Dataset
@@ -65,13 +66,19 @@ else:
 class CRCDataset(Dataset):
     def __init__(self, root_dir: os.PathLike,
                  nii_dir: os.PathLike,
+                 clinical_data_dir: os.PathLike,
+                 config,
                  transforms=None,
                  patch_size: tuple = (64, 64, 64),
                  stride: int = 32,
                  num_patches_per_sample: int = 50):  
+                         
+               
         
         self.root = root_dir
         self.nii_dir = nii_dir
+        self.clinical_data = clinical_data_dir
+
         self.patch_size = patch_size
         self.stride = stride
         self.num_patches_per_sample = num_patches_per_sample
@@ -100,6 +107,31 @@ class CRCDataset(Dataset):
                     self.images_path.append(f)
                 elif 'mapping.pkl' in f:
                     self.mapping_path.append(f)
+
+
+        clinical_data_dir = os.path.join(self.root, self.clinical_data)
+        default_missing = pd._libs.parsers.STR_NA_VALUES
+        self.clinical_data = pd.read_csv(
+            clinical_data_dir,
+            delimiter=';',
+            encoding='utf-8',
+            index_col=False,
+            na_filter=True,
+            na_values=default_missing)
+        
+        self.clinical_data.columns = self.clinical_data.columns.str.strip()
+        self.clinical_data = self.clinical_data[config['clinical_data_attributes'].keys()]
+        self.clinical_data.dropna(subset=['Nr pacjenta'], inplace=True)
+        self.clinical_data.dropna(subset=['Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane'], inplace=True)
+
+        for column, dtype in config['clinical_data_attributes'].items():
+            self.clinical_data[column] = self.clinical_data[column].astype(dtype)
+
+        self.clinical_data = self.clinical_data.reset_index(drop=True)        
+        self.clinical_data.rename(columns={'Nr pacjenta': 'patient_id'}, inplace=True)
+        self._clean_tnm_clinical_data()
+
+
 
     def __len__(self):
     # todo
@@ -216,6 +248,34 @@ class CRCDataset(Dataset):
 
         return img_patch, mask_patch, image, mask
         # return image, mask , bboxes, instance_mask
+
+
+    def _clean_tnm_clinical_data(self):
+
+        self.clinical_data = self.clinical_data[
+            self.clinical_data['TNM wg mnie'].notna() & (self.clinical_data['TNM wg mnie'] != '')]
+        
+        self.clinical_data = self.clinical_data[
+            self.clinical_data['TNM wg mnie'].str.startswith('T')]
+        
+        self.clinical_data.dropna(how='all', axis=0, inplace=True)
+        self.clinical_data.dropna(subset=['TNM wg mnie'], inplace=True)
+
+        self.clinical_data = self.clinical_data[
+            self.clinical_data['TNM wg mnie'].str.contains(r'T', regex=True) &
+            self.clinical_data['TNM wg mnie'].str.contains(r'N', regex=True)
+        ]
+
+
+        def make_lower_case(tnm_string):
+            return ''.join([char.lower() if char in ['A', 'B', 'C', 'X'] else char for char in tnm_string])
+
+        self.clinical_data['TNM wg mnie'] = self.clinical_data['TNM wg mnie'].apply(make_lower_case)
+    
+        self.clinical_data['wmT'] = self.clinical_data['TNM wg mnie'].str.extract(r'T([0-9]+[a-b]?|x|is)?')
+        self.clinical_data['wmN'] = self.clinical_data['TNM wg mnie'].str.extract(r'N([0-9]+[a-c]?)?')
+        self.clinical_data['wmM'] = self.clinical_data['TNM wg mnie'].str.extract(r'M([0-9]+)?')
+
 
 
 def evaluate_segmentation(pred_logits, true_mask, num_classes=7):
