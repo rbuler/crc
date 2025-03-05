@@ -80,7 +80,7 @@ class CRCDataset(Dataset):
         self.clinical_data = self.clinical_data[config['clinical_data_attributes'].keys()]
         
         self.clinical_data.dropna(subset=['Nr pacjenta'], inplace=True)
-        self.clinical_data.dropna(subset=['Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane'], inplace=True)
+        # self.clinical_data.dropna(subset=['Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane'], inplace=True)
         
         for column, dtype in config['clinical_data_attributes'].items():
             self.clinical_data[column] = self.clinical_data[column].astype(dtype)
