@@ -349,6 +349,8 @@ transforms = [train_transforms, val_transforms]
 
 dataset = CRCDataset(root_dir=config['dir']['root'],
                         nii_dir=config['dir']['nii_images'],
+                        clinical_data_dir=config['dir']['clinical_data'],
+                        config=config,
                         transforms=transforms,
                         patch_size=patch_size,
                         stride=stride,
@@ -358,11 +360,34 @@ train_size = int(0.75 * len(dataset))
 val_size = int(0.20 * len(dataset))
 test_size = len(dataset) - train_size - val_size
 
+
+
+ids = []
+for i in range(len(dataset)):
+    ids.append(int(dataset.get_patient_id(i)))
+
+explicit_ids_test = [31, 32, 47, 54, 73, 78, 109, 197]
+ids_train_val_test = list(set(ids) - set(explicit_ids_test))
+
+train_size = int(0.75 * len(ids_train_val_test))
+val_size = int(0.20 * len(ids_train_val_test))
+test_size = len(ids_train_val_test) - train_size - val_size
+
+train_ids = random.sample(ids_train_val_test, train_size)
+val_ids = random.sample(list(set(ids_train_val_test) - set(train_ids)), val_size)
+
+# test ids = train - val + explicit test ids
+test_ids = list((set(ids_train_val_test) - set(train_ids) - set(val_ids)) | set(explicit_ids_test))
+
+train_dataset = [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in train_ids]
+val_dataset = [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in val_ids]
+test_dataset = [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in test_ids]
+
+
 if run:
-    run["dataset/train_size"] = train_size
-    run["dataset/val_size"] = val_size
-    run["dataset/test_size"] = test_size
-train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
+    run["dataset/train_size"] = len(train_dataset)
+    run["dataset/val_size"] = len(val_dataset)
+    run["dataset/test_size"] = len(test_dataset)
 
 # dataloader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=0)
 def collate_fn(batch):
