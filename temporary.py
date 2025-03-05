@@ -271,7 +271,6 @@ class HybridLoss(torch.nn.Module):
 
 # %%
 train_transforms = mt.Compose([
-    mt.EnsureTyped(keys=["image", "mask"]),
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=0),
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=1),
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=2),
@@ -281,17 +280,10 @@ train_transforms = mt.Compose([
     mt.RandZoomd(keys=["image", "mask"], min_zoom=0.9, max_zoom=1.1, prob=0.3),
     mt.RandGaussianNoised(keys="image", prob=0.2, mean=0.0, std=0.05),
     mt.RandGaussianSmoothd(keys="image", prob=0.2, sigma_x=(0.5, 1.5)),
-    mt.RandAdjustContrastd(keys="image", prob=0.2, gamma=(0.7, 1.3)),
-    mt.RandScaleIntensityd(keys="image", factors=0.1, prob=0.3),
-    mt.RandShiftIntensityd(keys="image", offsets=0.1, prob=0.3),
-    mt.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-    mt.EnsureTyped(keys=["image", "mask"])
 ])
 
 val_transforms = mt.Compose([
-    mt.EnsureTyped(keys=["image", "mask"]),
-    mt.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-    mt.EnsureTyped(keys=["image", "mask"])
+    mt.ToTensord(keys=["image", "mask"]),
 ])
 transforms = [train_transforms, val_transforms]
 
@@ -302,8 +294,8 @@ dataset = CRCDataset(root_dir=config['dir']['root'],
                         stride=stride,
                         num_patches_per_sample=100)
 
-train_size = int(0.8 * len(dataset))
-val_size = int(0.15 * len(dataset))
+train_size = int(0.75 * len(dataset))
+val_size = int(0.20 * len(dataset))
 test_size = len(dataset) - train_size - val_size
 
 if run:
@@ -463,94 +455,6 @@ for _, _, image, mask in test_dataloader:
     metrics = evaluate_segmentation(pred_logits, mask.to(device, dtype=torch.long), num_classes=num_classes)
     print(f"Test IoU: {metrics['IoU']:.4f}, Test Dice: {metrics['Dice']:.4f}")
 
-# draw 3d prediction mask with ground truth mask
-
-
-
-# %%
-
-# x = dataset[22]
-# image = x[0]  # Shape (512, 512, 264)
-# mask = x[1]   # Shape (512, 512, 264)
-# bboxes = x[2]["boxes"]
-# labels = x[2]["labels"]
-# instance_mask = x[3].type(torch.uint8)
-# mask = instance_mask
-
-# threshold_min = -125  # Lower bound for soft tissue
-# threshold_max = 225  # Upper bound for soft tissue
-# image = torch.clamp(image, threshold_min, threshold_max)
-# image = image - threshold_min  # Shift to start from 0
-# image = image / (threshold_max - threshold_min)
-
-
-# sum_per_slice = (mask > 0).sum(dim=(0, 1))
-# max_slice_idx = sum_per_slice.argmax().item()
-
-# image_slice = image[:, :, max_slice_idx]
-# mask_slice = mask[:, :, max_slice_idx]
-# plt.figure(figsize=(8, 8))
-# plt.imshow(image_slice, cmap="gray")
-# plt.imshow(mask_slice, cmap="jet", alpha=0.4)
-
-
-
-# for i, box in enumerate(bboxes):
-#     y_min, x_min, z_min, y_max, x_max, z_max = box
-
-#     if z_min <= max_slice_idx <= z_max:
-#         print(box)
-#         rect = plt.Rectangle(
-#             (x_min, y_min),
-#             x_max - x_min,
-#             y_max - y_min,
-#             linewidth=2,
-#             edgecolor="red",
-#             facecolor="none",
-#         )
-#         plt.gca().add_patch(rect)
-#         plt.text(
-#             x_min,
-#             y_min - 5,
-#             f"Label: {labels[i]}",
-#             color="red",
-#             fontsize=12,
-#             bbox=dict(facecolor="white", alpha=0.5),
-#         )
-
-# # draw line at x min and y min
-# plt.axhline(y=y_min, color='r', linestyle='--')
-# plt.axvline(x=x_min, color='g', linestyle='--')
-# plt.axhline(y=y_max, color='b', linestyle='--')
-# plt.axvline(x=x_max, color='c', linestyle='--')
-
-
-# plt.title(f"Slice {max_slice_idx} with Mask and 2D Bounding Boxes")
-# plt.axis("off")
-# plt.show()
-
-# # %%
-# x = dataset[0]
-# image = x[0]  # Shape (patch_, patch_, patch_)
-# mask = x[1]   # Shape (patch_, patch_, patch_)
-
-# mid_slice = image.shape[2] // 2
-# fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-# axes[0].imshow(image[:, :, mid_slice], cmap="gray")
-# axes[0].imshow(mask[:, :, mid_slice], cmap="jet", alpha=0.25)
-# axes[0].set_title("Axial View (Top-Down)")
-
-# axes[1].imshow(image[:, mid_slice, :], cmap="gray")
-# axes[1].imshow(mask[:, mid_slice, :], cmap="jet", alpha=0.25)
-# axes[1].set_title("Coronal View (Front)")
-
-# axes[2].imshow(image[mid_slice, :, :], cmap="gray")
-# axes[2].imshow(mask[mid_slice, :, :], cmap="jet", alpha=0.25)
-# axes[2].set_title("Sagittal View (Side)")
-
-# for ax in axes:
-#     ax.axis("off")
-# plt.tight_layout()
-# plt.show()
+# TODO draw 3d prediction mask with ground truth mask
 
 # %%
