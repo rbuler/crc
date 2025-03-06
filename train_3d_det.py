@@ -67,9 +67,28 @@ for sample in data_dicts:
     sample['boxes'] = sample['boxes'][valid_indices]
     sample['labels'] = sample['labels'][valid_indices]
 
+dataset = CRCDataset(root_dir=config['dir']['root'],
+                        clinical_data_dir=config['dir']['clinical_data'],
+                        nii_dir=config['dir']['nii_images'],
+                        dcm_dir=config['dir']['dcm_images'],
+                        config=config,
+                        transform=None,
+                        save_new_masks=False)
 
-train_files, temp_files = train_test_split(data_dicts, test_size=0.2, random_state=seed)
-val_files, test_files = train_test_split(temp_files, test_size=0.5, random_state=seed)
+clinical_data = dataset.clinical_data
+# Get IDs that have Tx or T0 in wmT column
+# IDs to be moved to the test set (Tx or T0 Clinical Diagnosis)
+Tx_T0_ids = clinical_data[clinical_data['wmT'].isin(['x', '0'])]['patient_id'].tolist()
+Tx_T0_ids = [f"{id}a" for id in Tx_T0_ids]
+print(f"IDs with Tx or T0 in wmT column: {Tx_T0_ids}")
+test_ids = Tx_T0_ids
+test_files = [sample for sample in data_dicts if sample['id'] in test_ids]
+remaining_data = [sample for sample in data_dicts if sample['id'] not in test_ids]
+additional_test_files = remaining_data[:6]
+test_files.extend(additional_test_files)
+remaining_data = remaining_data[6:]
+train_files, val_files = train_test_split(remaining_data, test_size=0.2, random_state=seed)
+
 print(f"Train: {len(train_files)}, Val: {len(val_files)}, Test: {len(test_files)}")
 
 def get_box_counts(data_files):
