@@ -2,6 +2,8 @@
 import os
 import re
 import sys
+import ast
+import uuid
 import yaml
 import time
 import torch
@@ -38,7 +40,8 @@ with open(args.config_path) as file:
 
 
 num_classes = config['training']['num_classes']
-patch_size = tuple(map(int, config['training']['patch_size']))
+# patch_size = tuple(map(int, config['training']['patch_size']))
+patch_size = ast.literal_eval(config['training']['patch_size'])
 stride = config['training']['stride']
 batch_size = config['training']['batch_size']
 num_epochs = config['training']['epochs']
@@ -122,7 +125,6 @@ class CRCDataset(Dataset):
         self.clinical_data.columns = self.clinical_data.columns.str.strip()
         self.clinical_data = self.clinical_data[config['clinical_data_attributes'].keys()]
         self.clinical_data.dropna(subset=['Nr pacjenta'], inplace=True)
-        self.clinical_data.dropna(subset=['Liczba zaznaczonych ww chłonnych, 0- zaznaczone ale niepodejrzane'], inplace=True)
 
         for column, dtype in config['clinical_data_attributes'].items():
             self.clinical_data[column] = self.clinical_data[column].astype(dtype)
@@ -347,6 +349,7 @@ val_transforms = mt.Compose([
 ])
 transforms = [train_transforms, val_transforms]
 
+# %%
 dataset = CRCDataset(root_dir=config['dir']['root'],
                         nii_dir=config['dir']['nii_images'],
                         clinical_data_dir=config['dir']['clinical_data'],
@@ -366,7 +369,7 @@ ids = []
 for i in range(len(dataset)):
     ids.append(int(dataset.get_patient_id(i)))
 
-explicit_ids_test = [31, 32, 47, 54, 73, 78, 109, 197]
+explicit_ids_test = [31, 32, 47, 54, 73, 78, 109, 197, 204]
 ids_train_val_test = list(set(ids) - set(explicit_ids_test))
 
 train_size = int(0.75 * len(ids_train_val_test))
@@ -383,13 +386,12 @@ train_dataset = [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)
 val_dataset = [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in val_ids]
 test_dataset = [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in test_ids]
 
-
 if run:
     run["dataset/train_size"] = len(train_dataset)
     run["dataset/val_size"] = len(val_dataset)
     run["dataset/test_size"] = len(test_dataset)
 
-# dataloader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=0)
+# %%
 def collate_fn(batch):
     img_patch, mask_patch, _, _ = zip(*batch)
     img_patch = torch.stack(img_patch)
@@ -410,7 +412,9 @@ if optimizer == "adam":
 # %%
 best_val_loss = float('inf')
 best_val_metrics = {"IoU": 0, "Dice": 0}
-best_model_path = "best_model.pth"
+
+# join root from config dir root and /models
+best_model_path = os.path.join(config['dir']['root'], "models", f"best_model_{uuid.uuid4()}.pth")
 early_stopping_counter = 0
 
 for epoch in range(num_epochs):
