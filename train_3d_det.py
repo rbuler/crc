@@ -276,52 +276,55 @@ for epoch in range(NUM_EPOCHS):
     epoch_end_time = time.time()
     epoch_elapsed_time = epoch_end_time - epoch_start_time
     total_elapsed_time = epoch_end_time - training_start_time
-    total_minutes, total_seconds = divmod(total_elapsed_time, 60)
+    total_minutes, total_seconds = divmod(total_elapsed_time, 60)    
+    
     print(f"Epoch {epoch+1:3}/{NUM_EPOCHS}, Loss: {avg_loss:.4f} ", end="")
-    print(f"in Total {int(total_minutes):4}m {int(total_seconds):2}s ", end="")
-
-    model.eval()
-    iou_scores = []
-    with torch.no_grad():
-        for images, targets in val_loader:
-            images = [img.to(device) for img in images]
-            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-            outputs = model(input_images=images, use_inferer=False)
-        # for batch in val_loader:
-        #     images, boxes, labels = batch["image"], batch["boxes"], batch["labels"]
-        #     targets = [{"boxes": boxes[0], "labels": labels[0]}]
-        #     images = images.to(device)
-        #     outputs = model(input_images=images, use_inferer=True)
-            pred_boxes = outputs[0]["boxes"]
-            target_boxes = targets[0]["boxes"]
-            if pred_boxes.shape[0] == 0 and target_boxes.shape[0] > 0:
-                iou_scores.append(0)
-            elif target_boxes.shape[0] == 0:
-                iou_scores.append(0)
-            else:
-                ious = box_iou(pred_boxes, target_boxes)
-                if ious.numel() > 0:
-                    iou_scores.append(ious.max(dim=0).values.mean().item())
-            del outputs, pred_boxes, target_boxes
-            torch.cuda.empty_cache()
-            gc.collect()
     if (epoch+1) % 10 == 0:
-        print(f"iou_scores: {iou_scores}")
-    mean_iou = float(np.mean(iou_scores))
-    print(f"IoU avg: {mean_iou:.3f} min: {np.min(iou_scores):.3f} max: {np.max(iou_scores):.3f}")
-    if best_iou < mean_iou:
-        best_iou = mean_iou
-        patience_counter = config['training']['patience']
-        best_model = copy.deepcopy(model.network.state_dict())
+        print(f"in Total {int(total_minutes):4}m {int(total_seconds):2}s ", end="")
     else:
-        patience_counter -= 1
-    if run:
-        run["val/IoU"].log(mean_iou)
-        run["val/patience_counter"].log(patience_counter)
-    if not patience_counter:
-        print(f"Early stopping at epoch {epoch+1}, best IoU: {best_iou:.3f}")
-        break
-
+        print(f"in Total {int(total_minutes):4}m {int(total_seconds):2}s ")
+    
+    if (epoch+1) % 5 == 0:
+        model.eval()
+        iou_scores = []
+        with torch.no_grad():
+            # for images, targets in val_loader:
+            #     images = [img.to(device) for img in images]
+            #     targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+            #     outputs = model(input_images=images, use_inferer=False)
+            for batch in val_loader:
+                images, boxes, labels = batch["image"], batch["boxes"], batch["labels"]
+                targets = [{"boxes": boxes[0], "labels": labels[0]}]
+                images = images.to(device)
+                outputs = model(input_images=images, use_inferer=True)
+                pred_boxes = outputs[0]["boxes"]
+                target_boxes = targets[0]["boxes"]
+                if pred_boxes.shape[0] == 0 and target_boxes.shape[0] > 0:
+                    iou_scores.append(0)
+                elif target_boxes.shape[0] == 0:
+                    iou_scores.append(0)
+                else:
+                    ious = box_iou(pred_boxes, target_boxes)
+                    if ious.numel() > 0 and not torch.isnan(ious).any():
+                        iou_scores.append(ious.max(dim=0).values.mean().item())
+                del outputs, pred_boxes, target_boxes
+                torch.cuda.empty_cache()
+                gc.collect()
+        mean_iou = float(np.mean(iou_scores)) if iou_scores else 0.0
+        print(f"IoU avg: {mean_iou:.3f} min: {np.min(iou_scores):.3f} max: {np.max(iou_scores):.3f}")
+        if best_iou < mean_iou:
+            best_iou = mean_iou
+            patience_counter = config['training']['patience'] # reset
+            best_model = copy.deepcopy(model.network.state_dict())
+        else:
+            patience_counter = max(0, patience_counter - 1)
+        if run:
+            run["val/IoU"].log(mean_iou)
+            run["val/patience_counter"].log(patience_counter)
+        if not patience_counter:
+            print(f"Early stopping at epoch {epoch+1}, best IoU: {best_iou:.3f}")
+            break
+        
 filename = f"model_{uuid.uuid4().hex}.pth"
 models_dir = os.path.join(config['dir']['root'], "models")
 os.makedirs(models_dir, exist_ok=True)
