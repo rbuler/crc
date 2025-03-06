@@ -2,6 +2,8 @@
 import os
 import re
 import sys
+import ast
+import uuid
 import yaml
 import time
 import torch
@@ -38,7 +40,8 @@ with open(args.config_path) as file:
 
 
 num_classes = config['training']['num_classes']
-patch_size = tuple(map(int, config['training']['patch_size']))
+# patch_size = tuple(map(int, config['training']['patch_size']))
+patch_size = ast.literal_eval(config['training']['patch_size'])
 stride = config['training']['stride']
 batch_size = config['training']['batch_size']
 num_epochs = config['training']['epochs']
@@ -409,7 +412,9 @@ if optimizer == "adam":
 # %%
 best_val_loss = float('inf')
 best_val_metrics = {"IoU": 0, "Dice": 0}
-best_model_path = "best_model.pth"
+
+# join root from config dir root and /models
+best_model_path = os.path.join(config['dir']['root'], "models", f"best_model_{uuid.uuid4()}.pth")
 early_stopping_counter = 0
 
 for epoch in range(num_epochs):
