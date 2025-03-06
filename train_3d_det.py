@@ -1,37 +1,25 @@
 # %%
-
+import os, sys, uuid, gc, re, glob, time, json, copy, warnings, yaml, logging, neptune
 import numpy as np
 import torch
+import torch.optim as optim
+import utils
 from monai.utils import set_determinism
 from monai.transforms import ScaleIntensityRanged
 from monai.data import DataLoader, Dataset
 from monai.data.box_utils import box_iou 
 from monai.losses import FocalLoss
 from monai.apps.detection.utils.anchor_utils import AnchorGenerator
-import os
-import uuid
-import gc
-import re
-import glob
-import time
-import json
-import copy
-from generate_transforms import generate_detection_train_transform, generate_detection_val_transform
-import utils
-import yaml
-from my_tests import check_masks_inside_boxes
-from utils import interactive_slice_viewer
-import torch.optim as optim
-from det_model import retinanet_resnet_fpn_detector
-import warnings
-warnings.filterwarnings("ignore")
-import logging
 from sklearn.model_selection import train_test_split
-import neptune
 
+from generate_transforms import generate_detection_train_transform, generate_detection_val_transform
+from my_tests import check_masks_inside_boxes
+from det_model import retinanet_resnet_fpn_detector
+from dataset import CRCDataset
+
+warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 
 # MAKE PARSER AND LOAD PARAMS FROM CONFIG FILE--------------------------------
@@ -40,7 +28,7 @@ args, unknown = parser.parse_known_args()
 with open(args.config_path) as file:
     config = yaml.load(file, Loader=yaml.FullLoader)
 
-if config["neptune"]:
+if config["neptune"] and not any("ipykernel" in arg for arg in sys.argv):
     run = neptune.init_run(project="ProjektMMG/CRC")
     run["parameters/config"] = config
     run["sys/group_tags"].add(["Det3D"])
