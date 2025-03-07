@@ -22,6 +22,7 @@ import monai.transforms as mt
 
 from monai.losses import TverskyLoss, FocalLoss
 from monai.metrics import DiceMetric, MeanIoU
+from monai.inferers import SlidingWindowInferer
 # from pytorch3dunet.unet3d.losses import DiceLoss
 
 
@@ -64,8 +65,21 @@ if config['neptune']:
     run["sys/group_tags"].add(["Seg3D"])
 else:
     run = None
-    
+
 # %%
+
+def window_and_normalize_ct(ct_image, window_center=45, window_width=400):
+
+    lower_bound = window_center - window_width / 2
+    upper_bound = window_center + window_width / 2
+    ct_windowed = np.clip(ct_image, lower_bound, upper_bound)
+    normalized = (ct_windowed - lower_bound) / (upper_bound - lower_bound)
+    
+    return normalized
+
+
+
+
 class CRCDataset(Dataset):
     def __init__(self, root_dir: os.PathLike,
                  nii_dir: os.PathLike,
@@ -174,7 +188,7 @@ class CRCDataset(Dataset):
             num_samples = min(len(background_patches), self.num_patches_per_sample // 2)
             selected_patches = random.sample(background_patches, num_samples)
         else:
-            selected_foreground = random.sample(foreground_patches, num_samples)
+            selected_foreground = random.sample(foreground_patches, num_samples) 
             selected_background = random.sample(background_patches, num_samples)
             selected_patches = selected_foreground + selected_background
 
@@ -206,14 +220,11 @@ class CRCDataset(Dataset):
         if len(instance_mask.shape) == 4:
             instance_mask = instance_mask[:, :, 0, :]
         # instance_mask = instance_mask.permute(1, 0, 2) # need to permute to get correct bounding boxes
-        
-        threshold_min = -125  # lower bound for soft tissue
-        threshold_max = 225  # upper bound for soft tissue
-        
-# 
-        image = image - threshold_min
-        image[(image <= 0) & (image >= threshold_max - threshold_min)] = 0
-        image = image / (threshold_max - threshold_min)
+        window_center = 45
+        window_width = 400
+        image = window_and_normalize_ct(image,
+                                        window_center=window_center,
+                                        window_width=window_width)
 
         # # assign 0 values to mask > 1
         mask[mask == 2] = 0
@@ -222,22 +233,12 @@ class CRCDataset(Dataset):
         mask[mask == 6] = 0
         mask[mask == 4] = 0
 
-        # bboxes = get_3d_bounding_boxes(instance_mask, self.mapping_path[idx])
-        # bboxes = get_2d_bounding_boxes(instance_mask, self.mapping_path[idx], plane='xy')
-
         patches = self.extract_patches(image, mask)
         # img_patch, mask_patch = random.choice(patches)
         selected_patches = random.sample(patches, 8)
         img_patch = torch.stack([p[0] for p in selected_patches])
         mask_patch = torch.stack([p[1] for p in selected_patches])
-        # img_patch = img_patch.unsqueeze(0)
-        # import json
-        # save to json file 
-        # image path, seg path, bboxes
-        # file_name = image_path.replace('.nii.gz', 'boxes.json')
-        # with open(file_name, 'w') as f:
-        #     json.dump({'image': image_path, 'mask': mask_path, 'boxes': bboxes['boxes'].tolist(), 'labels': bboxes['labels'].tolist() }, f)
-        # return image_path, mask_path, bboxes
+
         
         if (self.transforms is not None) and self.train_mode:
             data_to_transform = {"image": img_patch, "mask": mask_patch}
@@ -249,7 +250,6 @@ class CRCDataset(Dataset):
             img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
 
         return img_patch, mask_patch, image, mask
-        # return image, mask , bboxes, instance_mask
 
 
     def _clean_tnm_clinical_data(self):
@@ -280,9 +280,9 @@ class CRCDataset(Dataset):
 
 
 
-def evaluate_segmentation(pred_logits, true_mask, num_classes=7):
+def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5):
     pred_probs = torch.sigmoid(pred_logits) if num_classes == 1 else torch.softmax(pred_logits, dim=1)
-    pred_labels = torch.argmax(pred_probs, dim=1) if num_classes > 1 else (pred_probs > 0.5).long()
+    pred_labels = torch.argmax(pred_probs, dim=1) if num_classes > 1 else (pred_probs > prob_thresh).long()
 
     dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
     mean_iou_metric = MeanIoU(include_background=True, reduction="mean", get_not_nans=False)
@@ -351,19 +351,13 @@ transforms = [train_transforms, val_transforms]
 
 # %%
 dataset = CRCDataset(root_dir=config['dir']['root'],
-                        nii_dir=config['dir']['nii_images'],
-                        clinical_data_dir=config['dir']['clinical_data'],
-                        config=config,
-                        transforms=transforms,
-                        patch_size=patch_size,
-                        stride=stride,
-                        num_patches_per_sample=100)
-
-train_size = int(0.75 * len(dataset))
-val_size = int(0.20 * len(dataset))
-test_size = len(dataset) - train_size - val_size
-
-
+                     nii_dir=config['dir']['nii_images'],
+                     clinical_data_dir=config['dir']['clinical_data'],
+                     config=config,
+                     transforms=transforms,
+                     patch_size=patch_size,
+                     stride=stride,
+                     num_patches_per_sample=100)
 
 ids = []
 for i in range(len(dataset)):
@@ -373,18 +367,16 @@ explicit_ids_test = [31, 32, 47, 54, 73, 78, 109, 197, 204]
 ids_train_val_test = list(set(ids) - set(explicit_ids_test))
 
 train_size = int(0.75 * len(ids_train_val_test))
-val_size = int(0.20 * len(ids_train_val_test))
-test_size = len(ids_train_val_test) - train_size - val_size
+val_size = int(0.2 * len(ids_train_val_test))
+test_size = len(ids_train_val_test) - train_size - val_size + len(explicit_ids_test)
 
 train_ids = random.sample(ids_train_val_test, train_size)
 val_ids = random.sample(list(set(ids_train_val_test) - set(train_ids)), val_size)
-
-# test ids = train - val + explicit test ids
 test_ids = list((set(ids_train_val_test) - set(train_ids) - set(val_ids)) | set(explicit_ids_test))
 
-train_dataset = [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in train_ids]
-val_dataset = [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in val_ids]
-test_dataset = [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in test_ids]
+train_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in train_ids])
+val_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in val_ids])
+test_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in test_ids])
 
 if run:
     run["dataset/train_size"] = len(train_dataset)
@@ -398,6 +390,10 @@ def collate_fn(batch):
     mask_patch = torch.stack(mask_patch)
     return img_patch, mask_patch
 
+# train data set = subset of dataset with train_dataset indices
+# val data set = subset of dataset with val_dataset indices
+# test data set = subset of dataset with test_dataset indices
+
 
 train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, collate_fn=collate_fn)
 val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0, collate_fn=collate_fn)
@@ -408,6 +404,11 @@ criterion = HybridLoss(alpha=0.25, beta=0.75, gamma=2.0)
 
 if optimizer == "adam":
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
+
+if run:
+    run["train/loss_fn"] = criterion.__class__.__name__
+    run["train/optimizer"] = optimizer.__class__.__name__
+
 
 # %%
 best_val_loss = float('inf')
@@ -447,7 +448,6 @@ for epoch in range(num_epochs):
     avg_dice = total_dice / num_batches
 
     if run:
-        run["train/loss_fn"] = criterion.__class__.__name__
         run["train/loss"].log(avg_loss)
         run["train/IoU"].log(avg_iou)
         run["train/Dice"].log(avg_dice)
@@ -507,43 +507,123 @@ for epoch in range(num_epochs):
           f"Train Loss: {avg_loss:.4f}, Train IoU: {avg_iou:.4f}, Train Dice: {avg_dice:.4f}, "
           f"Val Loss: {avg_val_loss:.4f}, Val IoU: {avg_val_iou:.4f}, Val Dice: {avg_val_dice:.4f}, "
           f"Time: {epoch_time_hms}")
+    
+
 # %%
-# inference test with sliding window
+inferer = SlidingWindowInferer(roi_size=(96,96,64), sw_batch_size=1, overlap=0.5, device=torch.device('cpu'))
 
-def sliding_window_inference(image, model, patch_size, stride, device):
+model = UNet3D(in_channels=1, out_channels=num_classes, final_sigmoid=True).to(device)
+load = True
+if load:
+    model_path = 'best_model.pth'
+    model.load_state_dict(torch.load(model_path))
+    model = model.to(device)
     model.eval()
-    _, H, W, D = image.shape
-    h_size, w_size, d_size = patch_size
 
-    h_idxs = list(range(0, H - h_size + 1, stride))
-    w_idxs = list(range(0, W - w_size + 1, stride))
-    d_idxs = list(range(0, D - d_size + 1, stride))
+with torch.no_grad():
+    for probs in [0.5]:
+        print(f"Threshold: {probs}")
+        test_dataloader.dataset.dataset.set_mode(train_mode=False)
+        total_iou = 0
+        total_dice = 0
+        num_samples = 0
+        for i, (_, _, image, mask) in enumerate(val_dataloader):
+            image = image.to(device, dtype=torch.float32)
+            mask = mask.to(device, dtype=torch.long)
+            image = image.unsqueeze(0)
+            final_output = inferer(inputs=image, network=model)
+            final_output = final_output.squeeze(0)
+            metrics = evaluate_segmentation(final_output, mask.to(torch.device('cpu')), num_classes=num_classes, prob_thresh=probs)
+            total_iou += metrics["IoU"]
+            total_dice += metrics["Dice"]
+            num_samples += 1
+            print(f"Test IoU: {metrics['IoU']:.4f}, Test Dice: {metrics['Dice']:.4f}")
 
-    output = torch.zeros((1, H, W, D), device=device)
-    count_map = torch.zeros((1, H, W, D), device=device)
+            # id = val_dataloader.dataset.dataset.get_patient_id(i)
+            # final_output = (final_output.squeeze(0) > 0.5).cpu().numpy().astype(np.uint8)
+            # mask = mask.squeeze(0).cpu().numpy().astype(np.uint8)
 
-    with torch.no_grad():
-        for h in h_idxs:
-            for w in w_idxs:
-                for d in d_idxs:
-                    img_patch = image[:, h:h+h_size, w:w+w_size, d:d+d_size].to(device, dtype=torch.float32)
-                    img_patch = img_patch.unsqueeze(0)
-                    _, logits = model(img_patch, return_logits=True)
-                    # add logits or preds to output tensor TODO: check if this is correct
-                    output[:, h:h+h_size, w:w+w_size, d:d+d_size] += logits.squeeze(0)
-                    count_map[:, h:h+h_size, w:w+w_size, d:d+d_size] += 1
+            # combined_output = np.zeros_like(mask)
+            # combined_output[mask == 1] = 1
+            # combined_output[final_output == 1] = 2
+            # combined_output[(mask == 1) & (final_output == 1)] = 3
+            
+            # combined_output_nifti = nib.Nifti1Image(combined_output, np.eye(4))
+            # nib.save(combined_output_nifti, f'temporary/final_output_{id}.nii.gz')
 
-    output /= count_map
-    return output
+        avg_iou = total_iou / num_samples
+        avg_dice = total_dice / num_samples
+        print(f"Average IoU: {avg_iou:.4f}, Average Dice: {avg_dice:.4f}")
 
-model.eval()
-test_dataloader.dataset.dataset.set_mode(train_mode=False)
-for _, _, image, mask in test_dataloader:
-    image = image.to(device, dtype=torch.float32)
-    pred_logits = sliding_window_inference(image, model, patch_size=patch_size,  stride=stride, device=device)
-    metrics = evaluate_segmentation(pred_logits, mask.to(device, dtype=torch.long), num_classes=num_classes)
-    print(f"Test IoU: {metrics['IoU']:.4f}, Test Dice: {metrics['Dice']:.4f}")
+# %%
 
-# TODO draw 3d prediction mask with ground truth mask
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# import torch
+# import numpy as np
+# import plotly.graph_objects as go
+# from plotly.subplots import make_subplots
+
+# final_output = (final_output > 0.5)
+# mask = mask.squeeze(0).cpu().numpy().astype(np.uint8)
+# # mask = mask.cpu().numpy()
+# prediction = final_output.squeeze(0).cpu().numpy()
+
+
+# X, Y, Z = mask.shape 
+
+# x = np.arange(X)
+# y = np.arange(Y)
+# z = np.arange(Z)
+
+
+# fig = make_subplots(rows=1, cols=2,
+#                     specs=[[{'type': 'volume'}, {'type': 'volume'}]],
+#                     subplot_titles=['Ground Truth Mask', 'Prediction'])
+
+# fig.add_trace(go.Volume(
+#     x = np.repeat(x, Y*Z),
+#     y = np.tile(np.repeat(y, Z), X),
+#     z = np.tile(z, X*Y),
+#     value = mask.flatten(),
+#     opacity=0.2,
+#     surface_count=10,
+#     colorscale='Blues',
+#     showscale=True
+# ), row=1, col=1)
+
+
+# fig.add_trace(go.Volume(
+#     x = np.repeat(x, Y*Z),
+#     y = np.tile(np.repeat(y, Z), X),
+#     z = np.tile(z, X*Y),
+#     value = prediction.flatten(),
+#     opacity=0.2,         
+#     surface_count=10,
+#     colorscale='Reds',
+#     showscale=True
+# ), row=1, col=2)
+
+# fig.update_layout(title='Ground Truth Mask vs. Prediction',
+#                   scene=dict(aspectmode="cube"),
+#                   scene2=dict(aspectmode="cube"))
+
+# fig.show()
 
 # %%
