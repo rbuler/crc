@@ -522,6 +522,7 @@ if load:
 total_iou = 0
 total_dice = 0
 num_samples = len(test_dataloader)
+probs = 0.5
 
 with torch.no_grad():
     test_dataloader.dataset.dataset.set_mode(train_mode=False)
