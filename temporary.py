@@ -515,29 +515,35 @@ inferer = SlidingWindowInferer(roi_size=(96,96,64), sw_batch_size=1, overlap=0.5
 model = UNet3D(in_channels=1, out_channels=num_classes, final_sigmoid=True).to(device)
 load = True
 if load:
-    model_path = 'best_model.pth'
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(best_model_path))
     model = model.to(device)
     model.eval()
 
+total_iou = 0
+total_dice = 0
+num_samples = len(test_dataloader)
+
 with torch.no_grad():
-    for probs in [0.5]:
-        print(f"Threshold: {probs}")
-        test_dataloader.dataset.dataset.set_mode(train_mode=False)
-        total_iou = 0
-        total_dice = 0
-        num_samples = 0
-        for i, (_, _, image, mask) in enumerate(val_dataloader):
-            image = image.to(device, dtype=torch.float32)
-            mask = mask.to(device, dtype=torch.long)
-            image = image.unsqueeze(0)
-            final_output = inferer(inputs=image, network=model)
-            final_output = final_output.squeeze(0)
-            metrics = evaluate_segmentation(final_output, mask.to(torch.device('cpu')), num_classes=num_classes, prob_thresh=probs)
-            total_iou += metrics["IoU"]
-            total_dice += metrics["Dice"]
-            num_samples += 1
-            print(f"Test IoU: {metrics['IoU']:.4f}, Test Dice: {metrics['Dice']:.4f}")
+    test_dataloader.dataset.dataset.set_mode(train_mode=False)
+    for i, (_, _, image, mask) in enumerate(test_dataloader):
+        image = image.to(device, dtype=torch.float32)
+        mask = mask.to(device, dtype=torch.long)
+        image = image.unsqueeze(0)
+        final_output = inferer(inputs=image, network=model)
+        final_output = final_output.squeeze(0)
+        metrics = evaluate_segmentation(final_output, mask.to(torch.device('cpu')), num_classes=num_classes, prob_thresh=probs)
+        
+        total_iou += metrics["IoU"]
+        total_dice += metrics["Dice"]
+
+avg_iou = total_iou / num_samples
+avg_dice = total_dice / num_samples
+
+if run:
+    run["test/avg_IoU"] = avg_iou
+    run["test/avg_Dice"] = avg_dice
+
+print(f"Average IoU: {avg_iou:.4f}, Average Dice: {avg_dice:.4f}")
 
             # id = val_dataloader.dataset.dataset.get_patient_id(i)
             # final_output = (final_output.squeeze(0) > 0.5).cpu().numpy().astype(np.uint8)
@@ -550,9 +556,4 @@ with torch.no_grad():
             
             # combined_output_nifti = nib.Nifti1Image(combined_output, np.eye(4))
             # nib.save(combined_output_nifti, f'temporary/final_output_{id}.nii.gz')
-
-        avg_iou = total_iou / num_samples
-        avg_dice = total_dice / num_samples
-        print(f"Average IoU: {avg_iou:.4f}, Average Dice: {avg_dice:.4f}")
-
 # %%
