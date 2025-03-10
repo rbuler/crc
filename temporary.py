@@ -103,6 +103,10 @@ class CRCDataset(Dataset):
         self.masks_path = []
         self.instance_masks_path = []
         self.mapping_path = []
+        
+        self.cut_images_path = []
+        self.cut_mask_path = []
+
         self.transforms = transforms
         self.train_mode = False
 
@@ -118,6 +122,10 @@ class CRCDataset(Dataset):
                     continue
                 if 'labels.nii.gz' in f:
                     self.masks_path.append(f)
+                elif 'labels_cut.nii.gz' in f:
+                    self.cut_mask_path.append(f)
+                elif '_cut.nii.gz' in f:
+                    self.cut_images_path.append(f)
                 elif 'instance_mask.nii.gz' in f:
                     self.instance_masks_path.append(f)
                 elif 'nii.gz' in f:
@@ -175,7 +183,7 @@ class CRCDataset(Dataset):
                 for d in d_idxs:
                     img_patch = image[h:h+h_size, w:w+w_size, d:d+d_size]
                     mask_patch = mask[h:h+h_size, w:w+w_size, d:d+d_size]
-                    if torch.mean((img_patch < 0.1).float()) < 0.9:
+                    if torch.mean((img_patch < 0.05).float()) < 0.9:
                         patch_candidates.append((img_patch, mask_patch))
 
         foreground_patches = [p for p in patch_candidates if torch.any(p[1] > 0)]
@@ -200,8 +208,14 @@ class CRCDataset(Dataset):
 
 
     def __getitem__(self, idx):
-        image_path = self.images_path[idx]
-        mask_path = self.masks_path[idx]
+        cut = True
+        if not cut:
+            image_path = self.images_path[idx]
+            mask_path = self.masks_path[idx]
+        else:
+            image_path = self.cut_images_path[idx]
+            mask_path = self.cut_mask_path[idx]
+
         instance_mask_path = self.instance_masks_path[idx]
 
         image = np.asarray(nib.load(image_path).dataobj)
@@ -323,8 +337,7 @@ class HybridLoss(torch.nn.Module):
     def __init__(self, alpha=0.25, beta=0.75, gamma=2.0):
         super(HybridLoss, self).__init__()
         self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
-        self.focal_loss = FocalLoss()
-        self.gamma = gamma
+        self.focal_loss = FocalLoss(gamma=gamma)
 
     def forward(self, logits, targets):
         tversky_loss = self.tversky_loss(logits, targets)
@@ -571,4 +584,5 @@ print(f"Average IoU: {avg_iou:.4f}, Average Dice: {avg_dice:.4f}")
             
             # combined_output_nifti = nib.Nifti1Image(combined_output, np.eye(4))
             # nib.save(combined_output_nifti, f'temporary/final_output_{id}.nii.gz')
+
 # %%
