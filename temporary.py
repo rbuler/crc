@@ -331,6 +331,19 @@ class HybridLoss(torch.nn.Module):
         focal_loss = self.focal_loss(logits, targets)
         return tversky_loss + focal_loss
 
+
+class FocalTverskyLoss(torch.nn.Module):
+    def __init__(self, alpha=0.25, beta=0.75, gamma=2.0):
+        super(FocalTverskyLoss, self).__init__()
+        self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
+        self.gamma = gamma
+
+    def forward(self, logits, targets):
+        tversky_loss = self.tversky_loss(logits, targets)
+        return torch.pow(tversky_loss, self.gamma)
+    
+
+
 # %%
 train_transforms = mt.Compose([
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=0),
@@ -400,7 +413,7 @@ val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, n
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
 
 model = UNet3D(in_channels=1, out_channels=num_classes, final_sigmoid=True).to(device)
-criterion = HybridLoss(alpha=0.25, beta=0.75, gamma=2.0)
+criterion = FocalTverskyLoss(alpha=0.25, beta=0.75, gamma=2.0)
 
 if optimizer == "adam":
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
@@ -493,10 +506,7 @@ for epoch in range(num_epochs):
 
     if early_stopping_counter >= patience:
         print(f"Early stopping triggered after {epoch+1} epochs.")
-        print(f"Saved best model with Val Loss: {best_val_loss:.4f}, Val IoU: {best_val_metrics['IoU']:.4f}, Val Dice: {best_val_metrics['Dice']:.4f}")
-        torch.save(best_model, best_model_path)
-        if run:
-            run["model/best"].upload(best_model_path)
+
         break
 
     end_time = time.time()
@@ -507,7 +517,11 @@ for epoch in range(num_epochs):
           f"Train Loss: {avg_loss:.4f}, Train IoU: {avg_iou:.4f}, Train Dice: {avg_dice:.4f}, "
           f"Val Loss: {avg_val_loss:.4f}, Val IoU: {avg_val_iou:.4f}, Val Dice: {avg_val_dice:.4f}, "
           f"Time: {epoch_time_hms}")
-    
+
+print(f"Saved best model with Val Loss: {best_val_loss:.4f}, Val IoU: {best_val_metrics['IoU']:.4f}, Val Dice: {best_val_metrics['Dice']:.4f}")
+torch.save(best_model, best_model_path)
+if run:
+    run["model_filename"] = best_model_path   
 
 # %%
 inferer = SlidingWindowInferer(roi_size=(96,96,64), sw_batch_size=1, overlap=0.5, device=torch.device('cpu'))
