@@ -17,14 +17,16 @@ import nibabel as nib
 import torch.optim as optim
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
-from pytorch3dunet.unet3d.model import UNet3D
+
 import monai.transforms as mt
 
 from monai.losses import TverskyLoss, FocalLoss
 from monai.metrics import DiceMetric, MeanIoU
 from monai.inferers import SlidingWindowInferer
-# from pytorch3dunet.unet3d.losses import DiceLoss
 
+from pytorch3dunet.unet3d.model import UNet3D
+sys.path.append("/home/r_buler/coding/crc/unetr_plus_plus")
+from unetr_plus_plus.unetr_pp.network_architecture.synapse.unetr_pp_synapse import UNETR_PP
 
 # SET UP LOGGING -------------------------------------------------------------
 logger = logging.getLogger(__name__)
@@ -67,6 +69,68 @@ else:
     run = None
 
 # %%
+def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5):
+    pred_probs = torch.sigmoid(pred_logits) if num_classes == 1 else torch.softmax(pred_logits, dim=1)
+    pred_labels = torch.argmax(pred_probs, dim=1) if num_classes > 1 else (pred_probs > prob_thresh).long()
+
+    dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
+    mean_iou_metric = MeanIoU(include_background=True, reduction="mean", get_not_nans=False)
+
+    valid_pred_labels = []
+    valid_true_masks = []
+
+    for i in range(true_mask.shape[0]):
+        if torch.any(true_mask[i] > 0):
+            valid_pred_labels.append(pred_labels[i].unsqueeze(0))
+            valid_true_masks.append(true_mask[i].unsqueeze(0))
+
+    if valid_pred_labels:
+        valid_pred_labels = torch.cat(valid_pred_labels, dim=0)
+        valid_true_masks = torch.cat(valid_true_masks, dim=0)
+
+        dice_metric(y_pred=valid_pred_labels, y=valid_true_masks)
+        mean_iou_metric(y_pred=valid_pred_labels, y=valid_true_masks)
+
+        mean_dice = dice_metric.aggregate().item()
+        mean_iou = mean_iou_metric.aggregate().item()
+
+        dice_metric.reset()
+        mean_iou_metric.reset()
+
+        return {
+            "IoU": mean_iou,
+            "Dice": mean_dice,
+        }
+    else:
+        return {
+            # rare case if all batch samples have no foreground pixels
+            "IoU": 0.0,
+            "Dice": 0.0,
+        }
+
+class HybridLoss(torch.nn.Module):
+    def __init__(self, alpha=0.25, beta=0.75, gamma=2.0):
+        super(HybridLoss, self).__init__()
+        self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
+        self.focal_loss = FocalLoss(gamma=gamma)
+
+    def forward(self, logits, targets):
+        tversky_loss = self.tversky_loss(logits, targets)
+        focal_loss = self.focal_loss(logits, targets)
+        return tversky_loss + focal_loss
+
+
+class FocalTverskyLoss(torch.nn.Module):
+    def __init__(self, alpha=0.25, beta=0.75, gamma=2.0):
+        super(FocalTverskyLoss, self).__init__()
+        self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
+        self.gamma = gamma
+
+    def forward(self, logits, targets):
+        tversky_loss = self.tversky_loss(logits, targets)
+        return torch.pow(tversky_loss, self.gamma)
+
+# %%
 
 def window_and_normalize_ct(ct_image, window_center=45, window_width=400):
 
@@ -76,9 +140,6 @@ def window_and_normalize_ct(ct_image, window_center=45, window_width=400):
     normalized = (ct_windowed - lower_bound) / (upper_bound - lower_bound)
     
     return normalized
-
-
-
 
 class CRCDataset(Dataset):
     def __init__(self, root_dir: os.PathLike,
@@ -161,10 +222,40 @@ class CRCDataset(Dataset):
     # todo
         return len(self.images_path)
     
+    def set_mode(self, train_mode):
+        self.train_mode = train_mode
+
 
     def get_patient_id(self, idx):
         patient_id = os.path.basename(self.images_path[idx]).split('_')[0].split(' ')[0]
         return ''.join(filter(str.isdigit, patient_id))
+    
+
+    def _clean_tnm_clinical_data(self):
+
+        self.clinical_data = self.clinical_data[
+            self.clinical_data['TNM wg mnie'].notna() & (self.clinical_data['TNM wg mnie'] != '')]
+        
+        self.clinical_data = self.clinical_data[
+            self.clinical_data['TNM wg mnie'].str.startswith('T')]
+        
+        self.clinical_data.dropna(how='all', axis=0, inplace=True)
+        self.clinical_data.dropna(subset=['TNM wg mnie'], inplace=True)
+
+        self.clinical_data = self.clinical_data[
+            self.clinical_data['TNM wg mnie'].str.contains(r'T', regex=True) &
+            self.clinical_data['TNM wg mnie'].str.contains(r'N', regex=True)
+        ]
+
+
+        def make_lower_case(tnm_string):
+            return ''.join([char.lower() if char in ['A', 'B', 'C', 'X'] else char for char in tnm_string])
+
+        self.clinical_data['TNM wg mnie'] = self.clinical_data['TNM wg mnie'].apply(make_lower_case)
+    
+        self.clinical_data['wmT'] = self.clinical_data['TNM wg mnie'].str.extract(r'T([0-9]+[a-b]?|x|is)?')
+        self.clinical_data['wmN'] = self.clinical_data['TNM wg mnie'].str.extract(r'N([0-9]+[a-c]?)?')
+        self.clinical_data['wmM'] = self.clinical_data['TNM wg mnie'].str.extract(r'M([0-9]+)?')
 
 
     def extract_patches(self, image, mask):
@@ -201,10 +292,6 @@ class CRCDataset(Dataset):
             selected_patches = selected_foreground + selected_background
 
         return selected_patches
-
-
-    def set_mode(self, train_mode):
-        self.train_mode = train_mode
 
 
     def __getitem__(self, idx):
@@ -247,8 +334,12 @@ class CRCDataset(Dataset):
         mask[mask == 6] = 0
         mask[mask == 4] = 0
 
+
+        # temporary cuz model requires patch of shape (64 128 128)
+        image = image.permute(2, 0, 1)
+        mask = mask.permute(2, 0, 1)
+
         patches = self.extract_patches(image, mask)
-        # img_patch, mask_patch = random.choice(patches)
         selected_patches = random.sample(patches, 8)
         img_patch = torch.stack([p[0] for p in selected_patches])
         mask_patch = torch.stack([p[1] for p in selected_patches])
@@ -265,98 +356,6 @@ class CRCDataset(Dataset):
 
         return img_patch, mask_patch, image, mask
 
-
-    def _clean_tnm_clinical_data(self):
-
-        self.clinical_data = self.clinical_data[
-            self.clinical_data['TNM wg mnie'].notna() & (self.clinical_data['TNM wg mnie'] != '')]
-        
-        self.clinical_data = self.clinical_data[
-            self.clinical_data['TNM wg mnie'].str.startswith('T')]
-        
-        self.clinical_data.dropna(how='all', axis=0, inplace=True)
-        self.clinical_data.dropna(subset=['TNM wg mnie'], inplace=True)
-
-        self.clinical_data = self.clinical_data[
-            self.clinical_data['TNM wg mnie'].str.contains(r'T', regex=True) &
-            self.clinical_data['TNM wg mnie'].str.contains(r'N', regex=True)
-        ]
-
-
-        def make_lower_case(tnm_string):
-            return ''.join([char.lower() if char in ['A', 'B', 'C', 'X'] else char for char in tnm_string])
-
-        self.clinical_data['TNM wg mnie'] = self.clinical_data['TNM wg mnie'].apply(make_lower_case)
-    
-        self.clinical_data['wmT'] = self.clinical_data['TNM wg mnie'].str.extract(r'T([0-9]+[a-b]?|x|is)?')
-        self.clinical_data['wmN'] = self.clinical_data['TNM wg mnie'].str.extract(r'N([0-9]+[a-c]?)?')
-        self.clinical_data['wmM'] = self.clinical_data['TNM wg mnie'].str.extract(r'M([0-9]+)?')
-
-
-
-def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5):
-    pred_probs = torch.sigmoid(pred_logits) if num_classes == 1 else torch.softmax(pred_logits, dim=1)
-    pred_labels = torch.argmax(pred_probs, dim=1) if num_classes > 1 else (pred_probs > prob_thresh).long()
-
-    dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
-    mean_iou_metric = MeanIoU(include_background=True, reduction="mean", get_not_nans=False)
-
-    valid_pred_labels = []
-    valid_true_masks = []
-
-    for i in range(true_mask.shape[0]):
-        if torch.any(true_mask[i] > 0):
-            valid_pred_labels.append(pred_labels[i].unsqueeze(0))
-            valid_true_masks.append(true_mask[i].unsqueeze(0))
-
-    if valid_pred_labels:
-        valid_pred_labels = torch.cat(valid_pred_labels, dim=0)
-        valid_true_masks = torch.cat(valid_true_masks, dim=0)
-
-        dice_metric(y_pred=valid_pred_labels, y=valid_true_masks)
-        mean_iou_metric(y_pred=valid_pred_labels, y=valid_true_masks)
-
-        mean_dice = dice_metric.aggregate().item()
-        mean_iou = mean_iou_metric.aggregate().item()
-
-        dice_metric.reset()
-        mean_iou_metric.reset()
-
-        return {
-            "IoU": mean_iou,
-            "Dice": mean_dice,
-        }
-    else:
-        return {
-            # rare case if all batch samples have no foreground pixels
-            "IoU": 0.0,
-            "Dice": 0.0,
-        }
-    
-class HybridLoss(torch.nn.Module):
-    def __init__(self, alpha=0.25, beta=0.75, gamma=2.0):
-        super(HybridLoss, self).__init__()
-        self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
-        self.focal_loss = FocalLoss(gamma=gamma)
-
-    def forward(self, logits, targets):
-        tversky_loss = self.tversky_loss(logits, targets)
-        focal_loss = self.focal_loss(logits, targets)
-        return tversky_loss + focal_loss
-
-
-class FocalTverskyLoss(torch.nn.Module):
-    def __init__(self, alpha=0.25, beta=0.75, gamma=2.0):
-        super(FocalTverskyLoss, self).__init__()
-        self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
-        self.gamma = gamma
-
-    def forward(self, logits, targets):
-        tversky_loss = self.tversky_loss(logits, targets)
-        return torch.pow(tversky_loss, self.gamma)
-    
-
-
 # %%
 train_transforms = mt.Compose([
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=0),
@@ -368,6 +367,7 @@ train_transforms = mt.Compose([
     mt.RandZoomd(keys=["image", "mask"], min_zoom=0.9, max_zoom=1.1, prob=0.3),
     mt.RandGaussianNoised(keys="image", prob=0.2, mean=0.0, std=0.05),
     mt.RandGaussianSmoothd(keys="image", prob=0.2, sigma_x=(0.5, 1.5)),
+    mt.ToTensord(keys=["image", "mask"]),
 ])
 
 val_transforms = mt.Compose([
@@ -409,38 +409,53 @@ if run:
     run["dataset/val_size"] = len(val_dataset)
     run["dataset/test_size"] = len(test_dataset)
 
-# %%
 def collate_fn(batch):
     img_patch, mask_patch, _, _ = zip(*batch)
     img_patch = torch.stack(img_patch)
     mask_patch = torch.stack(mask_patch)
     return img_patch, mask_patch
 
-# train data set = subset of dataset with train_dataset indices
-# val data set = subset of dataset with val_dataset indices
-# test data set = subset of dataset with test_dataset indices
-
-
 train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, collate_fn=collate_fn)
 val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0, collate_fn=collate_fn)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
 
-model = UNet3D(in_channels=1, out_channels=num_classes, final_sigmoid=True).to(device)
-criterion = FocalTverskyLoss(alpha=0.25, beta=0.75, gamma=2.0)
+# %%
+
+# model = UNet3D(in_channels=1, out_channels=num_classes, final_sigmoid=True).to(device)
+model = UNETR_PP(in_channels=1, out_channels=14,
+                 img_size=(64, 128, 128),
+                #  feature_size=16, hidden_size=256,
+                #  num_heads=4,
+                #  norm_name='batch',
+                 depths=[3, 3, 3, 3],
+                 dims=[32, 64, 128, 256], do_ds=False)
+
+
+weights_path = '/media/dysk_a/jr_buler/RJG-gumed/models/model_final_checkpoint.model'
+checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
+model.load_state_dict(checkpoint['state_dict'], strict=False)
+
+model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+# model.out2.conv.conv = torch.nn.Conv3d(32, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+# model.out3.conv.conv = torch.nn.Conv3d(64, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+
+model = model.to(device)
+
+criterion = HybridLoss(alpha=0.25, beta=0.75, gamma=2.0)
+
 
 if optimizer == "adam":
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
 
 if run:
+    run["train/model"] = model.__class__.__name__
     run["train/loss_fn"] = criterion.__class__.__name__
     run["train/optimizer"] = optimizer.__class__.__name__
-
 
 # %%
 best_val_loss = float('inf')
 best_val_metrics = {"IoU": 0, "Dice": 0}
 
-# join root from config dir root and /models
 best_model_path = os.path.join(config['dir']['root'], "models", f"best_model_{uuid.uuid4()}.pth")
 early_stopping_counter = 0
 
@@ -459,7 +474,9 @@ for epoch in range(num_epochs):
         optimizer.zero_grad()
         img_patch = img_patch.permute(1, 0, 2, 3, 4)
         mask_patch = mask_patch.permute(1, 0, 2, 3, 4)
-        outputs, logits = model(img_patch, return_logits=True)
+        # outputs, logits = model(img_patch, return_logits=True)
+        logits = model(img_patch)
+        
         loss = criterion(logits, mask_patch)
         metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
         total_loss += loss.detach().item()
@@ -490,7 +507,8 @@ for epoch in range(num_epochs):
             img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.float32)
             img_patch = img_patch.permute(1, 0, 2, 3, 4)
             mask_patch = mask_patch.permute(1, 0, 2, 3, 4)
-            outputs, logits = model(img_patch, return_logits=True)
+            # outputs, logits = model(img_patch, return_logits=True)
+            logits = model(img_patch)
             loss = criterion(logits, mask_patch)
             metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
             val_loss += loss.detach().item()
@@ -537,9 +555,8 @@ if run:
     run["model_filename"] = best_model_path   
 
 # %%
-inferer = SlidingWindowInferer(roi_size=(96,96,64), sw_batch_size=1, overlap=0.5, device=torch.device('cpu'))
+inferer = SlidingWindowInferer(roi_size=(64,128,128), sw_batch_size=1, overlap=0.5, device=torch.device('cpu'))
 
-model = UNet3D(in_channels=1, out_channels=num_classes, final_sigmoid=True).to(device)
 load = True
 if load:
     model.load_state_dict(torch.load(best_model_path))
