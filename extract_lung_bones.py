@@ -107,7 +107,6 @@ if __name__ == '__main__':
             elif 'mapping.pkl' in f:
                 continue
 
-    image_paths = image_paths[:10]
     results = process_images(image_paths, mask_paths, window_size=20)
     
     slice_indexes_to_cut = [min(result["lung_end_index"], result["mask_first_nonzero"]) for result in results] # index for each patient
