@@ -4,6 +4,7 @@ import re
 import sys
 import ast
 import uuid
+import json
 import yaml
 import time
 import torch
@@ -42,8 +43,8 @@ with open(args.config_path) as file:
     config = yaml.load(file, Loader=yaml.FullLoader)
 
 
+# USE CONFIG PARAMS ----------------------------------------------------------
 num_classes = config['training']['num_classes']
-# patch_size = tuple(map(int, config['training']['patch_size']))
 patch_size = ast.literal_eval(config['training']['patch_size'])
 stride = config['training']['stride']
 batch_size = config['training']['batch_size']
@@ -330,9 +331,9 @@ class CRCDataset(Dataset):
         # # assign 0 values to mask > 1
         mask[mask == 2] = 0
         mask[mask == 3] = 0
+        mask[mask == 4] = 0
         mask[mask == 5] = 0
         mask[mask == 6] = 0
-        mask[mask == 4] = 0
 
 
         # temporary cuz model requires patch of shape (64 128 128)
@@ -408,6 +409,8 @@ if run:
     run["dataset/train_size"] = len(train_dataset)
     run["dataset/val_size"] = len(val_dataset)
     run["dataset/test_size"] = len(test_dataset)
+    transform_list = [str(t.__class__.__name__) for t in train_transforms.transforms]
+    run["dataset/transformations"] = json.dumps(transform_list)
 
 def collate_fn(batch):
     img_patch, mask_patch, _, _ = zip(*batch)
@@ -416,17 +419,14 @@ def collate_fn(batch):
     return img_patch, mask_patch
 
 train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, collate_fn=collate_fn)
-val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0, collate_fn=collate_fn)
+val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
 
 # %%
 
 # model = UNet3D(in_channels=1, out_channels=num_classes, final_sigmoid=True).to(device)
 model = UNETR_PP(in_channels=1, out_channels=14,
-                 img_size=(64, 128, 128),
-                #  feature_size=16, hidden_size=256,
-                #  num_heads=4,
-                #  norm_name='batch',
+                 img_size=tuple(patch_size),
                  depths=[3, 3, 3, 3],
                  dims=[32, 64, 128, 256], do_ds=False)
 
@@ -436,13 +436,11 @@ checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
 model.load_state_dict(checkpoint['state_dict'], strict=False)
 
 model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
-# model.out2.conv.conv = torch.nn.Conv3d(32, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
-# model.out3.conv.conv = torch.nn.Conv3d(64, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
 
 model = model.to(device)
 
-criterion = HybridLoss(alpha=0.25, beta=0.75, gamma=2.0)
-
+# criterion = HybridLoss(alpha=0.25, beta=0.75, gamma=2.0)
+criterion = TverskyLoss(alpha=0.25, beta=0.75, sigmoid=True)
 
 if optimizer == "adam":
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
@@ -458,6 +456,9 @@ best_val_metrics = {"IoU": 0, "Dice": 0}
 
 best_model_path = os.path.join(config['dir']['root'], "models", f"best_model_{uuid.uuid4()}.pth")
 early_stopping_counter = 0
+
+inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=1, overlap=0.5, device=torch.device('cpu'))
+
 
 for epoch in range(num_epochs):
     start_time = time.time()
@@ -503,14 +504,15 @@ for epoch in range(num_epochs):
     num_val_batches = len(val_dataloader)
     
     with torch.no_grad():
-        for img_patch, mask_patch in val_dataloader:
-            img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.float32)
-            img_patch = img_patch.permute(1, 0, 2, 3, 4)
-            mask_patch = mask_patch.permute(1, 0, 2, 3, 4)
-            # outputs, logits = model(img_patch, return_logits=True)
-            logits = model(img_patch)
-            loss = criterion(logits, mask_patch)
-            metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
+        for _, _, image, mask in val_dataloader:
+            image = image.to(device, dtype=torch.float32)
+            mask = mask.to(device, dtype=torch.long)
+            image = image.unsqueeze(0)
+            logits = inferer(inputs=image, network=model)
+            logits = logits.squeeze(0)
+            metrics = evaluate_segmentation(logits, mask.to(torch.device('cpu')), num_classes=num_classes, prob_thresh=0.5)
+        
+            loss = criterion(logits, mask)
             val_loss += loss.detach().item()
             val_iou += metrics["IoU"]
             val_dice += metrics["Dice"]
@@ -555,7 +557,7 @@ if run:
     run["model_filename"] = best_model_path   
 
 # %%
-inferer = SlidingWindowInferer(roi_size=(64,128,128), sw_batch_size=1, overlap=0.5, device=torch.device('cpu'))
+inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=1, overlap=0.5, device=torch.device('cpu'))
 
 load = True
 if load:
