@@ -2,3 +2,4 @@ __pycache__
 pytorch3dunet
 best_model.pth
 .neptune
+unetr_pp

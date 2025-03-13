@@ -26,8 +26,8 @@ from monai.metrics import DiceMetric, MeanIoU
 from monai.inferers import SlidingWindowInferer
 
 from pytorch3dunet.unet3d.model import UNet3D
-sys.path.append("/home/r_buler/coding/crc/unetr_plus_plus")
-from unetr_plus_plus.unetr_pp.network_architecture.synapse.unetr_pp_synapse import UNETR_PP
+sys.path.append("/home/r_buler/coding/crc/unetr_pp")
+from unetr_pp.network_architecture.synapse.unetr_pp_synapse import UNETR_PP
 
 # SET UP LOGGING -------------------------------------------------------------
 logger = logging.getLogger(__name__)
@@ -440,7 +440,7 @@ model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 
 model = model.to(device)
 
 # criterion = HybridLoss(alpha=0.25, beta=0.75, gamma=2.0)
-criterion = TverskyLoss(alpha=0.25, beta=0.75, sigmoid=True)
+criterion = TverskyLoss(alpha=0.9, beta=0.1, sigmoid=True)
 
 if optimizer == "adam":
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
