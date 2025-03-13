@@ -512,7 +512,7 @@ for epoch in range(num_epochs):
             logits = logits.squeeze(0)
             metrics = evaluate_segmentation(logits, mask.to(torch.device('cpu')), num_classes=num_classes, prob_thresh=0.5)
         
-            loss = criterion(logits, mask)
+            loss = criterion(logits,  mask.to(torch.device('cpu')))
             val_loss += loss.detach().item()
             val_iou += metrics["IoU"]
             val_dice += metrics["Dice"]
