@@ -91,6 +91,52 @@ def generate_detection_train_transform(
     return train_transforms
 
 
+# def generate_detection_val_transform(
+#     image_key,
+#     box_key,
+#     label_key,
+#     mask_key,
+#     intensity_transform,
+#     patch_size,
+#     batch_size,
+# ):
+
+#     val_transforms = Compose(
+#         [
+#             LoadImaged(keys=[image_key, mask_key], image_only=False, meta_key_postfix="meta_dict"),
+#             SqueezeAllDimsd(keys=[image_key, mask_key]),
+#             # EnsureChannelFirstd(keys=[image_key, mask_key]),
+#             EnsureTyped(keys=[image_key, mask_key, box_key], dtype=torch.float32),
+#             EnsureTyped(keys=[label_key], dtype=torch.long),
+#             # StandardizeEmptyBoxd(box_keys=[box_key], box_ref_image_keys=image_key),
+#             # Orientationd(keys=[image_key, mask_key], axcodes="RAS"),
+#             intensity_transform,
+#             RandCropBoxByPosNegLabeld(
+#                 image_keys=[image_key, mask_key],
+#                 box_keys=box_key,
+#                 label_keys=[label_key],
+#                 spatial_size=patch_size,
+#                 pos=1,
+#                 neg=0,
+#                 num_samples=batch_size,
+#                 whole_box=True,
+#                 # thresh_image_key=thresh_image_key,
+#                 # image_threshold=image_threshold,
+#                 # fg_indices_key=fg_indices_key,
+#                 # bg_indices_key=bg_indices_key,
+#                 meta_keys=["image_meta_dict", "mask_meta_dict"],
+#                 # meta_key_postfix=meta_key_postfix,
+#                 allow_smaller=False,
+#                 # allow_missing_keys=allow_missing_keys,
+#             ),
+#             EnsureTyped(keys=[image_key, box_key], dtype=torch.float32),
+#             EnsureTyped(keys=[label_key], dtype=torch.long),
+#             DeleteItemsd(keys=["image_meta_dict", "mask_meta_dict"]),
+
+#         ]
+#     )
+#     return val_transforms
+
 def generate_detection_val_transform(
     image_key,
     box_key,
@@ -101,7 +147,8 @@ def generate_detection_val_transform(
     val_transforms = Compose(
         [
             LoadImaged(keys=[image_key, mask_key], image_only=False, meta_key_postfix="meta_dict"),
-            EnsureChannelFirstd(keys=[image_key, mask_key]),
+            SqueezeAllDimsd(keys=[image_key, mask_key]),
+            # EnsureChannelFirstd(keys=[image_key, mask_key]),
             EnsureTyped(keys=[image_key, box_key], dtype=torch.float32),
             EnsureTyped(keys=[label_key], dtype=torch.long),
             # StandardizeEmptyBoxd(box_keys=[box_key], box_ref_image_keys=image_key),
