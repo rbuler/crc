@@ -32,7 +32,9 @@ if config["neptune"] and not any("ipykernel" in arg for arg in sys.argv):
     run = neptune.init_run(project="ProjektMMG/CRC")
     run["parameters/config"] = config
     run["sys/group_tags"].add(["Det3D"])
-    run["sys/group_tags"].add(["val_neg_0"])
+    # run["sys/group_tags"].add(["val_neg_0"])
+    run["sys/group_tags"].add(["HNSampler (no focal loss)"])
+    run["sys/group_tags"].add(["sliding window val"])
 else:
     run = None
 
@@ -84,10 +86,10 @@ print(f"IDs with Tx or T0 in wmT column: {Tx_T0_ids}")
 test_ids = Tx_T0_ids
 test_files = [sample for sample in data_dicts if sample['id'] in test_ids]
 remaining_data = [sample for sample in data_dicts if sample['id'] not in test_ids]
-additional_test_files = remaining_data[:6]
+additional_test_files = remaining_data[-5:]
 test_files.extend(additional_test_files)
-remaining_data = remaining_data[6:]
-train_files, val_files = train_test_split(remaining_data, test_size=0.2, random_state=seed)
+remaining_data = remaining_data[:-5]
+train_files, val_files = train_test_split(remaining_data, test_size=0.1, random_state=seed)
 
 print(f"Train: {len(train_files)}, Val: {len(val_files)}, Test: {len(test_files)}")
 
@@ -121,23 +123,23 @@ train_transforms = generate_detection_train_transform(
     patch_size=tuple(config['training']['patch_size']),
     batch_size=config['training']['batch_size'],
 )
-val_transforms = generate_detection_val_transform(
-    image_key="image",
-    box_key="boxes",
-    label_key="labels",
-    mask_key="mask",
-    intensity_transform=intensity_transform,
-    patch_size=tuple(config['training']['patch_size']),
-    batch_size=config['training']['batch_size'],
-)
-
 # val_transforms = generate_detection_val_transform(
 #     image_key="image",
 #     box_key="boxes",
 #     label_key="labels",
 #     mask_key="mask",
 #     intensity_transform=intensity_transform,
+#     patch_size=tuple(config['training']['patch_size']),
+#     batch_size=config['training']['batch_size'],
 # )
+
+val_transforms = generate_detection_val_transform(
+    image_key="image",
+    box_key="boxes",
+    label_key="labels",
+    mask_key="mask",
+    intensity_transform=intensity_transform,
+)
 def detection_collate_fn(batch):
     images = []
     targets = []
@@ -158,14 +160,13 @@ def detection_collate_fn(batch):
 
 train_dataset = Dataset(data=train_files, transform=train_transforms)
 train_loader = DataLoader(train_dataset,
-                          batch_size=1, num_workers=4,
+                          batch_size=1, num_workers=1,
                           collate_fn=detection_collate_fn,
                           shuffle=True)
 
 val_dataset = Dataset(data=val_files, transform=val_transforms)
 val_loader = DataLoader(val_dataset,
-                        batch_size=1, num_workers=4,
-                        collate_fn=detection_collate_fn,
+                        batch_size=1, num_workers=1,
                         shuffle=False)
 # check_masks_inside_boxes(train_loader, label=1) # 197a 204a no mask
 # check_masks_inside_boxes(val_loader, label=1)
@@ -173,7 +174,7 @@ val_loader = DataLoader(val_dataset,
 # for item in train_files:
 #     if item["id"] == '47a':
 #         iitem = Dataset(data=[item], transform=train_transforms)[0]
-#         interactive_slice_viewer(iitem, label=1)
+#         utils.interactive_slice_viewer(iitem, label=1)
 #         print(iitem["id"])
 #         print(iitem["boxes"])
 #         print(iitem["labels"])
@@ -181,7 +182,7 @@ val_loader = DataLoader(val_dataset,
 #         print(iitem["image"].shape)
 #         break
 # check_data = train_dataset[0]
-# interactive_slice_viewer(check_data[0])
+# utils.interactive_slice_viewer(check_data[0])
 # %%
 # sizes for 3 feature map levels of FPN (but len(returned_layers)+1 is the number of extracted feature maps)
 sizes = (
@@ -200,7 +201,7 @@ aspect_ratios = (
 
 anchor_generator = AnchorGenerator(sizes, aspect_ratios, indexing="ij")
 
-model =  retinanet_resnet_fpn_detector(
+model = retinanet_resnet_fpn_detector(
     num_classes=config['training']['num_classes'],
     n_input_channels=1,
     spatial_dims=3,
@@ -217,15 +218,16 @@ model =  retinanet_resnet_fpn_detector(
 # in [0.4, 0.5)
 model.set_regular_matcher(fg_iou_thresh=0.5,bg_iou_thresh=0.4)
 # model.set_balanced_sampler(512, 0.5)
-model.set_cls_loss(FocalLoss(reduction="mean", gamma=2.0))
+# model.set_cls_loss(FocalLoss(reduction="mean", gamma=2.0))
+model.set_hard_negative_sampler(batch_size_per_image=128, positive_fraction=0.2)
 model.set_sliding_window_inferer(roi_size=config['training']['patch_size'],
                                  sw_batch_size=1,
-                                 overlap=0.5,
+                                 overlap=0.25,
                                  device="cpu")
 model.set_box_selector_parameters(
-    score_thresh=0.05,
-    topk_candidates_per_level=100,
-    nms_thresh=0.5,
+    score_thresh=0.2,
+    topk_candidates_per_level=5,
+    nms_thresh=0.2,
     detections_per_img=1,
     apply_sigmoid=True
 )
@@ -250,7 +252,7 @@ else:
 training_start_time = time.time()
 best_iou = 0
 best_model = None
-patience_counter = 0
+patience_counter = config['training']['patience']
 for epoch in range(NUM_EPOCHS):
     epoch_start_time = time.time()
     model.train()
@@ -279,12 +281,13 @@ for epoch in range(NUM_EPOCHS):
     total_minutes, total_seconds = divmod(total_elapsed_time, 60)    
     
     print(f"Epoch {epoch+1:3}/{NUM_EPOCHS}, Loss: {avg_loss:.4f} ", end="")
-    if (epoch+1) % 10 == 0:
+    val_interval = 5
+    if (epoch+1) % val_interval == 0:
         print(f"in Total {int(total_minutes):4}m {int(total_seconds):2}s ", end="")
     else:
         print(f"in Total {int(total_minutes):4}m {int(total_seconds):2}s ")
     
-    if (epoch+1) % 5 == 0:
+    if (epoch+1) % val_interval == 0:
         model.eval()
         iou_scores = []
         with torch.no_grad():
