@@ -21,7 +21,7 @@ from monai.inferers import SlidingWindowInferer
 # from pytorch3dunet.unet3d.model import UNet3D
 from unetr_pp.network_architecture.synapse.unetr_pp_synapse import UNETR_PP
 from utils import evaluate_segmentation
-from dataset import CRCDataset_seg
+from dataset_seg import CRCDataset_seg
 
 # SET UP LOGGING -------------------------------------------------------------
 logger = logging.getLogger(__name__)
