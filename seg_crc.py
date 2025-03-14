@@ -40,6 +40,7 @@ num_classes = config['training']['num_classes']
 patch_size = ast.literal_eval(config['training']['patch_size'])
 stride = config['training']['stride']
 batch_size = config['training']['batch_size']
+num_workers = config['training']['num_workers']
 num_epochs = config['training']['epochs']
 patience = config['training']['patience']
 lr = config['training']['lr']
@@ -143,9 +144,9 @@ def collate_fn(batch):
     mask_patch = torch.stack(mask_patch)
     return img_patch, mask_patch
 
-train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, collate_fn=collate_fn)
-val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
+train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_fn)
+val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 
 # %%
 
