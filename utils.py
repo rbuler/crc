@@ -7,6 +7,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from ipywidgets import interact, IntSlider
 import matplotlib.patches as patches
+from monai.metrics import DiceMetric, MeanIoU
+
 
 def find_unique_value_mapping(mask1, mask2) -> dict:
     """
@@ -334,3 +336,44 @@ def interactive_slice_viewer(data, axis=2, label=None):
 
 
     interact(plot_slice, idx=IntSlider(min=0, max=num_slices-1, step=1, value=num_slices//2))
+
+
+
+def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5):
+    pred_probs = torch.sigmoid(pred_logits) if num_classes == 1 else torch.softmax(pred_logits, dim=1)
+    pred_labels = torch.argmax(pred_probs, dim=1) if num_classes > 1 else (pred_probs > prob_thresh).long()
+
+    dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
+    mean_iou_metric = MeanIoU(include_background=True, reduction="mean", get_not_nans=False)
+
+    valid_pred_labels = []
+    valid_true_masks = []
+
+    for i in range(true_mask.shape[0]):
+        if torch.any(true_mask[i] > 0):
+            valid_pred_labels.append(pred_labels[i].unsqueeze(0))
+            valid_true_masks.append(true_mask[i].unsqueeze(0))
+
+    if valid_pred_labels:
+        valid_pred_labels = torch.cat(valid_pred_labels, dim=0)
+        valid_true_masks = torch.cat(valid_true_masks, dim=0)
+
+        dice_metric(y_pred=valid_pred_labels, y=valid_true_masks)
+        mean_iou_metric(y_pred=valid_pred_labels, y=valid_true_masks)
+
+        mean_dice = dice_metric.aggregate().item()
+        mean_iou = mean_iou_metric.aggregate().item()
+
+        dice_metric.reset()
+        mean_iou_metric.reset()
+
+        return {
+            "IoU": mean_iou,
+            "Dice": mean_dice,
+        }
+    else:
+        return {
+            # rare case if all batch samples have no foreground pixels
+            "IoU": 0.0,
+            "Dice": 0.0,
+        }
