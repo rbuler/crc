@@ -22,8 +22,6 @@ class CRCDataset_seg(Dataset):
                  stride: int = 32,
                  num_patches_per_sample: int = 50):  
                          
-               
-        
         self.root = root_dir
         self.nii_dir = nii_dir
         self.clinical_data = clinical_data_dir
@@ -88,6 +86,68 @@ class CRCDataset_seg(Dataset):
         self._clean_tnm_clinical_data()
 
 
+    def __getitem__(self, idx):
+        cut = True
+        if not cut:
+            image_path = self.images_path[idx]
+            mask_path = self.masks_path[idx]
+        else:
+            image_path = self.cut_images_path[idx]
+            mask_path = self.cut_mask_path[idx]
+
+        instance_mask_path = self.instance_masks_path[idx]
+
+        image = np.asarray(nib.load(image_path).dataobj)
+        image = torch.from_numpy(image)
+
+        mask = np.asarray(nib.load(mask_path).dataobj)
+        mask = torch.from_numpy(mask)
+
+        instance_mask = np.asarray(nib.load(instance_mask_path).dataobj)
+        instance_mask = torch.from_numpy(instance_mask)
+
+        if len(image.shape) == 4:
+            image = image[:, :, 0, :]
+        if len(mask.shape) == 4:
+            mask = mask[:, :, 0, :]
+        if len(instance_mask.shape) == 4:
+            instance_mask = instance_mask[:, :, 0, :]
+        # instance_mask = instance_mask.permute(1, 0, 2) # need to permute to get correct bounding boxes
+        window_center = 45
+        window_width = 400
+        image = self.window_and_normalize_ct(image,
+                                             window_center=window_center,
+                                             window_width=window_width)
+
+        # # assign 0 values to mask > 1
+        mask[mask == 2] = 0
+        mask[mask == 3] = 0
+        mask[mask == 4] = 0
+        mask[mask == 5] = 0
+        mask[mask == 6] = 0
+
+
+        # temporary cuz model requires patch of shape (64 128 128)
+        image = image.permute(2, 0, 1)
+        mask = mask.permute(2, 0, 1)
+
+        patches = self.extract_patches(image, mask)
+        selected_patches = random.sample(patches, 8)
+        img_patch = torch.stack([p[0] for p in selected_patches])
+        mask_patch = torch.stack([p[1] for p in selected_patches])
+
+        
+        if (self.transforms is not None) and self.train_mode:
+            data_to_transform = {"image": img_patch, "mask": mask_patch}
+            transformed_patches = self.transforms[0](data_to_transform)  # train_transforms
+            img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
+        elif (self.transforms is not None) and not self.train_mode:
+            data_to_transform = {"image": img_patch, "mask": mask_patch}
+            transformed_patches = self.transforms[1](data_to_transform)  # val_transforms
+            img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
+
+        return img_patch, mask_patch, image, mask
+
 
     def __len__(self):
     # todo
@@ -101,6 +161,7 @@ class CRCDataset_seg(Dataset):
         patient_id = os.path.basename(self.images_path[idx]).split('_')[0].split(' ')[0]
         return ''.join(filter(str.isdigit, patient_id))
     
+    
     def window_and_normalize_ct(self, ct_image, window_center=45, window_width=400):
 
         lower_bound = window_center - window_width / 2
@@ -109,7 +170,6 @@ class CRCDataset_seg(Dataset):
         normalized = (ct_windowed - lower_bound) / (upper_bound - lower_bound)
         
         return normalized
-
 
 
     def _clean_tnm_clinical_data(self):
@@ -173,66 +233,3 @@ class CRCDataset_seg(Dataset):
             selected_patches = selected_foreground + selected_background
 
         return selected_patches
-
-
-    def __getitem__(self, idx):
-        cut = True
-        if not cut:
-            image_path = self.images_path[idx]
-            mask_path = self.masks_path[idx]
-        else:
-            image_path = self.cut_images_path[idx]
-            mask_path = self.cut_mask_path[idx]
-
-        instance_mask_path = self.instance_masks_path[idx]
-
-        image = np.asarray(nib.load(image_path).dataobj)
-        image = torch.from_numpy(image)
-
-        mask = np.asarray(nib.load(mask_path).dataobj)
-        mask = torch.from_numpy(mask)
-
-        instance_mask = np.asarray(nib.load(instance_mask_path).dataobj)
-        instance_mask = torch.from_numpy(instance_mask)
-
-        if len(image.shape) == 4:
-            image = image[:, :, 0, :]
-        if len(mask.shape) == 4:
-            mask = mask[:, :, 0, :]
-        if len(instance_mask.shape) == 4:
-            instance_mask = instance_mask[:, :, 0, :]
-        # instance_mask = instance_mask.permute(1, 0, 2) # need to permute to get correct bounding boxes
-        window_center = 45
-        window_width = 400
-        image = self.window_and_normalize_ct(image,
-                                             window_center=window_center,
-                                             window_width=window_width)
-
-        # # assign 0 values to mask > 1
-        mask[mask == 2] = 0
-        mask[mask == 3] = 0
-        mask[mask == 4] = 0
-        mask[mask == 5] = 0
-        mask[mask == 6] = 0
-
-
-        # temporary cuz model requires patch of shape (64 128 128)
-        image = image.permute(2, 0, 1)
-        mask = mask.permute(2, 0, 1)
-
-        patches = self.extract_patches(image, mask)
-        selected_patches = random.sample(patches, 8)
-        img_patch = torch.stack([p[0] for p in selected_patches])
-        mask_patch = torch.stack([p[1] for p in selected_patches])
-
-        
-        if (self.transforms is not None) and self.train_mode:
-            data_to_transform = {"image": img_patch, "mask": mask_patch}
-            transformed_patches = self.transforms[0](data_to_transform)  # train_transforms
-            img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
-        elif (self.transforms is not None) and not self.train_mode:
-            data_to_transform = {"image": img_patch, "mask": mask_patch}
-            transformed_patches = self.transforms[1](data_to_transform)  # val_transforms
-            img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
-
-        return img_patch, mask_patch, image, mask

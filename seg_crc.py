@@ -89,7 +89,7 @@ train_transforms = mt.Compose([
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=2),
     mt.RandRotated(keys=["image", "mask"], range_x=0.1, range_y=0.1, range_z=0.1, prob=0.3),
     mt.RandAffined(keys=["image", "mask"], prob=0.3, scale_range=(0.1, 0.1, 0.1), 
-                rotate_range=(0.1, 0.1, 0.1), mode=("bilinear", "nearest")),
+                   rotate_range=(0.1, 0.1, 0.1), mode=("bilinear", "nearest")),
     mt.RandZoomd(keys=["image", "mask"], min_zoom=0.9, max_zoom=1.1, prob=0.3),
     mt.RandGaussianNoised(keys="image", prob=0.2, mean=0.0, std=0.05),
     mt.RandGaussianSmoothd(keys="image", prob=0.2, sigma_x=(0.5, 1.5)),
@@ -156,12 +156,12 @@ model = UNETR_PP(in_channels=1, out_channels=14,
                  dims=[32, 64, 128, 256], do_ds=False)
 
 
-weights_path = '/media/dysk_a/jr_buler/RJG-gumed/models/model_final_checkpoint.model'
+
+weights_path = os.path.join(config['dir']['root'], "models", "model_final_checkpoint.model")
 checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
+
 model.load_state_dict(checkpoint['state_dict'], strict=False)
-
 model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
-
 model = model.to(device)
 
 # criterion = HybridLoss(alpha=0.25, beta=0.75, gamma=2.0)
@@ -169,6 +169,8 @@ criterion = TverskyLoss(alpha=0.9, beta=0.1, sigmoid=True)
 
 if optimizer == "adam":
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
+elif optimizer == "sgd":
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
 
 if run:
     run["train/model"] = model.__class__.__name__
