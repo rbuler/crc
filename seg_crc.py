@@ -16,12 +16,12 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 import monai.transforms as mt
-from monai.losses import TverskyLoss, FocalLoss, DiceCELoss
+from monai.losses import TverskyLoss, FocalLoss
 from monai.inferers import SlidingWindowInferer
 # from pytorch3dunet.unet3d.model import UNet3D
 from unetr_pp.network_architecture.synapse.unetr_pp_synapse import UNETR_PP
 from utils import evaluate_segmentation
-from dataset_seg import CRCDataset_seg
+from dataset import CRCDataset_seg
 
 # SET UP LOGGING -------------------------------------------------------------
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 if config['neptune']:
     run = neptune.init_run(project="ProjektMMG/CRC")
@@ -145,7 +145,7 @@ def collate_fn(batch):
     return img_patch, mask_patch
 
 train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_fn)
-val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
+val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 
 # %%
@@ -165,23 +165,17 @@ model.load_state_dict(checkpoint['state_dict'], strict=False)
 model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
 model = model.to(device)
 
-# criterion = TverskyLoss(alpha=10, beta=10, sigmoid=True)
-# criterion = FocalTverskyLoss(alpha=10, beta=10, gamma=2.0)
-# criterion = HybridLoss(alpha=10, beta=10, gamma=2.0)
-weight = torch.tensor([100.0]).to(device)
-criterion = DiceCELoss(sigmoid=True, weight=weight)
+# criterion = HybridLoss(alpha=0.25, beta=0.75, gamma=2.0)
+criterion = TverskyLoss(alpha=0.9, beta=0.1, sigmoid=True)
 
-
-weight_decay = 5e-4
 if optimizer == "adam":
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
 elif optimizer == "sgd":
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
 
 if run:
     run["train/model"] = model.__class__.__name__
     run["train/loss_fn"] = criterion.__class__.__name__
-    run["train/wd"] = weight_decay
     run["train/optimizer"] = optimizer.__class__.__name__
 
 # %%
@@ -211,7 +205,7 @@ for epoch in range(num_epochs):
         mask_patch = mask_patch.permute(1, 0, 2, 3, 4)
         # outputs, logits = model(img_patch, return_logits=True)
         logits = model(img_patch)
-        criterion = criterion.to(device=logits.device)
+        
         loss = criterion(logits, mask_patch)
         metrics = evaluate_segmentation(logits, mask_patch, num_classes=num_classes)
         total_loss += loss.detach().item()
@@ -243,10 +237,9 @@ for epoch in range(num_epochs):
             mask = mask.to(device, dtype=torch.long)
             image = image.unsqueeze(0)
             logits = inferer(inputs=image, network=model)
-            mask = mask.unsqueeze(0)
-
+            logits = logits.squeeze(0)
             metrics = evaluate_segmentation(logits, mask.to(torch.device('cpu')), num_classes=num_classes, prob_thresh=0.5)
-            criterion = criterion.to(device=logits.device)
+        
             loss = criterion(logits,  mask.to(torch.device('cpu')))
             val_loss += loss.detach().item()
             val_iou += metrics["IoU"]
