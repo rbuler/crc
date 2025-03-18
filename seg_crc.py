@@ -44,6 +44,7 @@ num_workers = config['training']['num_workers']
 num_epochs = config['training']['epochs']
 patience = config['training']['patience']
 lr = config['training']['lr']
+weight_decay = config['training']['wd']
 optimizer = config['training']['optimizer']
 
 # SET FIXED SEED FOR REPRODUCIBILITY --------------------------------
@@ -166,13 +167,10 @@ model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 
 model = model.to(device)
 
 
-# criterion = TverskyLoss(alpha=10, beta=10, sigmoid=True)
-# criterion = FocalTverskyLoss(alpha=10, beta=10, gamma=2.0)
-# criterion = HybridLoss(alpha=10, beta=10, gamma=2.0)
-weight = torch.tensor([100.0]).to(device)
-criterion = DiceCELoss(sigmoid=True, weight=weight)
+criterion = HybridLoss(alpha=1, beta=1, gamma=2.0)
+# weight = torch.tensor([100.0]).to(device)
+# criterion = DiceCELoss(sigmoid=True, weight=weight)
 
-weight_decay = 5e-4
 if optimizer == "adam":
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 elif optimizer == "sgd":
