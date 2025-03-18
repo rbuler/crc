@@ -132,7 +132,9 @@ class CRCDataset_seg(Dataset):
         mask = mask.permute(2, 0, 1)
 
         patches = self.extract_patches(image, mask)
-        selected_patches = random.sample(patches, 8)
+        num_to_select = min(8, len(patches))
+
+        selected_patches = random.sample(patches, num_to_select)
         img_patch = torch.stack([p[0] for p in selected_patches])
         mask_patch = torch.stack([p[1] for p in selected_patches])
 
