@@ -215,7 +215,7 @@ class CRCDataset_seg(Dataset):
                 for d in d_idxs:
                     img_patch = image[h:h+h_size, w:w+w_size, d:d+d_size]
                     mask_patch = mask[h:h+h_size, w:w+w_size, d:d+d_size]
-                    if torch.mean((img_patch < 0.05).float()) < 0.9:
+                    if torch.mean((img_patch < 0.001).float()) < 0.3:
                         patch_candidates.append((img_patch, mask_patch))
 
         foreground_patches = [p for p in patch_candidates if torch.any(p[1] > 0)]
