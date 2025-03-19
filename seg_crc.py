@@ -89,12 +89,16 @@ train_transforms = mt.Compose([
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=0),
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=1),
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=2),
-    mt.RandRotated(keys=["image", "mask"], range_x=0.1, range_y=0.1, range_z=0.1, prob=0.3),
-    mt.RandAffined(keys=["image", "mask"], prob=0.3, scale_range=(0.1, 0.1, 0.1), 
+    mt.RandGaussianNoised(keys=['image'], prob=0, mean=0.0, std=0.01),
+    mt.RandShiftIntensityd(keys=['image'], offsets=0.05, prob=0.2),
+    mt.RandStdShiftIntensityd(keys=['image'], factors=0.05, prob=0.2),
+    mt.RandScaleIntensityd(keys=['image'], factors=0.1, prob=0.2),
+    mt.RandScaleIntensityFixedMeand(keys=['image'], factors=0.05, prob=0.2),
+    mt.RandGaussianSmoothd(keys=['image'], sigma_x=(0.25, .5), sigma_y=(0.25, .5), sigma_z=(0.25, .5), prob=0.2),
+    # mt.RandRotated(keys=["image", "mask"], range_x=0.1, range_y=0.1, range_z=0.1, prob=1.), # mask uq >>
+    mt.RandAffined(keys=["image", "mask"], prob=1., scale_range=(0.1, 0.1, 0.1), 
                    rotate_range=(0.1, 0.1, 0.1), mode=("bilinear", "nearest")),
-    mt.RandZoomd(keys=["image", "mask"], min_zoom=0.9, max_zoom=1.1, prob=0.3),
-    mt.RandGaussianNoised(keys="image", prob=0.2, mean=0.0, std=0.05),
-    mt.RandGaussianSmoothd(keys="image", prob=0.2, sigma_x=(0.5, 1.5)),
+    # mt.RandZoomd(keys=["image", "mask"], min_zoom=0.9, max_zoom=1.1, prob=1.),  # mask uq >
     mt.ToTensord(keys=["image", "mask"]),
 ])
 
