@@ -1,5 +1,6 @@
 # %%
 import os
+import re
 import numpy as np
 import nibabel as nib
 import matplotlib.pyplot as plt
@@ -75,6 +76,8 @@ def process_images(image_paths, mask_paths, window_size=10):
         # normalize lung_slices_sum and mask_slices_sum
         lung_slices_sum = lung_slices_sum / np.max(lung_slices_sum)
         mask_slices_sum = mask_slices_sum / np.max(mask_slices_sum)
+        slice_indexes_to_cut = min(lung_end_index, np.argmax(mask_slices_sum > 0)) # index for each patient
+
 
         results.append({
             "image_index": idx + 1,
@@ -82,7 +85,10 @@ def process_images(image_paths, mask_paths, window_size=10):
             "bone_slices_sum": bone_slices_sum,
             "lung_end_index": lung_end_index,  # largest descend in means
             "mask_slices_sum": mask_slices_sum,
-            "mask_first_nonzero": np.argmax(mask_slices_sum > 0)
+            "mask_first_nonzero": np.argmax(mask_slices_sum > 0),
+            "image_path": image_path,
+            "mask_path": mask_paths[idx],
+            "slice_index_to_cut": slice_indexes_to_cut,
         })
 
     return results
@@ -95,11 +101,20 @@ if __name__ == '__main__':
     image_paths = []
     mask_paths = []
 
+    pattern = re.compile(r'^\d+a$') # take only those ##a
+
     for root, dirs, files in os.walk(nii_pth, topdown=False):
         for name in files:
             f = os.path.join(root, name)
+            folder_name = f.split('/')[-2]
+            if not pattern.match(folder_name):
+                continue
             if 'labels.nii.gz' in f:
                 mask_paths.append(f)
+            elif 'labels_cut.nii.gz' in f:
+                continue
+            elif '_cut.nii.gz' in f:
+                continue
             elif 'instance_mask.nii.gz' in f:
                 continue
             elif 'nii.gz' in f:
@@ -109,26 +124,25 @@ if __name__ == '__main__':
 
     results = process_images(image_paths, mask_paths, window_size=20)
     
-    slice_indexes_to_cut = [min(result["lung_end_index"], result["mask_first_nonzero"]) for result in results] # index for each patient
 
     # save new images and masks after cutting the slices
     # so image now is slice[slice_index_to_cut:]
     # and mask is mask[slice_index_to_cut:]
-    for idx, image_path in enumerate(image_paths):
-        nifti_image = nib.load(image_path)
+    for result in results:
+        nifti_image = nib.load(result["image_path"])
+        nifti_mask = nib.load(result["mask_path"])
         image_hu = nifti_image.get_fdata()
         image_hu = np.squeeze(image_hu) if len(image_hu.shape) == 4 else image_hu
-        nifti_mask = nib.load(mask_paths[idx])
+        nifti_mask = nib.load(result["mask_path"])
         mask = nifti_mask.get_fdata()
         mask = np.squeeze(mask) if len(mask.shape) == 4 else mask
-        image_hu = image_hu[:, :, slice_indexes_to_cut[idx]:]
-        mask = mask[:, :, slice_indexes_to_cut[idx]:]
+        image_hu = image_hu[:, :, :-result['slice_index_to_cut']]
+        mask = mask[:, :, :-result['slice_index_to_cut']]
 
-        new_image_path = image_path.replace(".nii.gz", "_cut.nii.gz")
-        new_mask_path = mask_paths[idx].replace(".nii.gz", "_cut.nii.gz")
+        new_image_path = result["image_path"].replace(".nii.gz", "_cut.nii.gz")
+        new_mask_path = result["mask_path"].replace(".nii.gz", "_cut.nii.gz")
         nib.save(nib.Nifti1Image(image_hu, nifti_image.affine), new_image_path)
         nib.save(nib.Nifti1Image(mask, nifti_mask.affine), new_mask_path)
-    
     draw = False
     if draw:
         for result in results:
@@ -136,6 +150,8 @@ if __name__ == '__main__':
             plt.plot(result["lung_slices_sum"], label='Lung Slices Sum')
             plt.plot(result["mask_slices_sum"], label='Mask Slices Sum', linestyle='--')
             plt.axvline(x=result["lung_end_index"], color='r', linestyle='-', label='Lung End Index')
+            plt.axvline(x=result["slice_index_to_cut"], color='b', linestyle='-', label='Slice to cut')
+
             plt.legend()
             plt.title('Lung and Mask Slices Sum')
             plt.xlabel('Slice Index')
