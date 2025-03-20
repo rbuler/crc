@@ -210,6 +210,13 @@ class CRCDataset_seg(Dataset):
         w_idxs = list(range(0, W - w_size + 1, self.stride))
         d_idxs = list(range(0, D - d_size + 1, self.stride))
 
+        if h_idxs[-1] != H - h_size:
+            h_idxs.append(H - h_size)
+        if w_idxs[-1] != W - w_size:
+            w_idxs.append(W - w_size)
+        if d_idxs[-1] != D - d_size:
+            d_idxs.append(D - d_size)
+
         patch_candidates = []
 
         for h in h_idxs:
