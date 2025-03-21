@@ -16,7 +16,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 import monai.transforms as mt
-from monai.losses import TverskyLoss, FocalLoss, DiceCELoss
+from monai.losses import TverskyLoss, FocalLoss, DiceCELoss, DiceFocalLoss
 from monai.inferers import SlidingWindowInferer
 # from pytorch3dunet.unet3d.model import UNet3D
 from unetr_pp.network_architecture.synapse.unetr_pp_synapse import UNETR_PP
@@ -181,7 +181,12 @@ elif loss_fn == "tversky":
     criterion = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
 elif loss_fn == "dicece":
     weight = torch.tensor([5.0]).to(device)
+    # weight = None
     criterion = DiceCELoss(sigmoid=True, weight=weight)
+elif loss_fn == "focal":
+    criterion = FocalLoss(gamma=2.0)
+elif loss_fn == "dicefocal":
+    criterion = DiceFocalLoss(sigmoid=True, gamma=2.0)
 
 
 if optimizer == "adam":
