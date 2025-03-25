@@ -16,7 +16,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 import monai.transforms as mt
-from monai.losses import TverskyLoss, FocalLoss, DiceCELoss, DiceFocalLoss
+from monai.losses import TverskyLoss, FocalLoss, DiceCELoss, DiceFocalLoss, DiceLoss
 from monai.inferers import SlidingWindowInferer
 # from pytorch3dunet.unet3d.model import UNet3D
 from unetr_pp.network_architecture.synapse.unetr_pp_synapse import UNETR_PP
@@ -48,6 +48,7 @@ weight_decay = config['training']['wd']
 optimizer = config['training']['optimizer']
 alpha = config['training']['loss_alpha']
 beta = config['training']['loss_beta']
+pos_weight = config['training']['pos_weight']
 loss_fn = config['training']['loss_fn']
 
 # SET FIXED SEED FOR REPRODUCIBILITY --------------------------------
@@ -56,7 +57,7 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 if config['neptune']:
     run = neptune.init_run(project="ProjektMMG/CRC")
@@ -66,33 +67,52 @@ else:
     run = None
 
 # %%
-class HybridLoss(torch.nn.Module):
-    def __init__(self, alpha=0.25, beta=0.75, gamma=2.0):
-        super(HybridLoss, self).__init__()
-        self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
-        self.focal_loss = FocalLoss(gamma=gamma)
-
-    def forward(self, logits, targets):
-        tversky_loss = self.tversky_loss(logits, targets)
-        focal_loss = self.focal_loss(logits, targets)
-        return tversky_loss + focal_loss
-
-class FocalTverskyLoss(torch.nn.Module):
-    def __init__(self, alpha=0.25, beta=0.75, gamma=2.0):
-        super(FocalTverskyLoss, self).__init__()
-        self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
+class LossFn:
+    def __init__(self, loss_fn, alpha=0.25, beta=0.75, weight=None, gamma=2.0, device=None):
+        self.loss_fn = loss_fn
+        self.alpha = alpha
+        self.beta = beta
+        self.weight = weight
         self.gamma = gamma
+        self.device = device
 
-    def forward(self, logits, targets):
-        tversky_loss = self.tversky_loss(logits, targets)
-        return torch.pow(tversky_loss, self.gamma)
+    def get_loss(self):
+        if self.loss_fn == "hybrid":
+            return self.HybridLoss(alpha=self.alpha, beta=self.beta, gamma=self.gamma)
+        elif self.loss_fn == "tversky":
+            return TverskyLoss(alpha=self.alpha, beta=self.beta, sigmoid=True)
+        elif self.loss_fn == "dicece":
+            if self.weight is None:
+                return DiceCELoss(sigmoid=True)
+            else:
+                pos_weight = torch.tensor([self.weight]).to(self.device) if self.device else None
+                return DiceCELoss(sigmoid=True, weight=pos_weight)
+        elif self.loss_fn == "dice":
+            return DiceLoss(sigmoid=True)
+        elif self.loss_fn == "dicefocal":
+            return DiceFocalLoss(sigmoid=True, gamma=self.gamma)
+        elif self.loss_fn == "focal":
+            return FocalLoss(gamma=self.gamma)
+        else:
+            raise ValueError(f"Unsupported loss function: {self.loss_fn}")
+
+    class HybridLoss(torch.nn.Module):
+        def __init__(self, alpha, beta, gamma):
+            super().__init__()
+            self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
+            self.focal_loss = FocalLoss(gamma=gamma)
+
+        def forward(self, logits, targets):
+            tversky_loss = self.tversky_loss(logits, targets)
+            focal_loss = self.focal_loss(logits, targets)
+            return tversky_loss + focal_loss
 
 # %%
 train_transforms = mt.Compose([
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=0),
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=1),
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=2),
-    mt.RandGaussianNoised(keys=['image'], prob=0, mean=0.0, std=0.01),
+    mt.RandGaussianNoised(keys=['image'], prob=0.2, mean=0.0, std=0.01),
     mt.RandShiftIntensityd(keys=['image'], offsets=0.05, prob=0.2),
     mt.RandStdShiftIntensityd(keys=['image'], factors=0.05, prob=0.2),
     mt.RandScaleIntensityd(keys=['image'], factors=0.1, prob=0.2),
@@ -157,14 +177,11 @@ val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_worker
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 
 # %%
-
 # model = UNet3D(in_channels=1, out_channels=num_classes, final_sigmoid=True).to(device)
 model = UNETR_PP(in_channels=1, out_channels=14,
                  img_size=tuple(patch_size),
                  depths=[3, 3, 3, 3],
                  dims=[32, 64, 128, 256], do_ds=False)
-
-
 
 weights_path = os.path.join(config['dir']['root'], "models", "model_final_checkpoint.model")
 checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
@@ -172,22 +189,9 @@ checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
 model.load_state_dict(checkpoint['state_dict'], strict=False)
 model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
 model = model.to(device)
-
-
-
-if loss_fn == "hybrid":
-    criterion = HybridLoss(alpha=alpha, beta=beta, gamma=2.0)
-elif loss_fn == "tversky":
-    criterion = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
-elif loss_fn == "dicece":
-    weight = torch.tensor([5.0]).to(device)
-    # weight = None
-    criterion = DiceCELoss(sigmoid=True, weight=weight)
-elif loss_fn == "focal":
-    criterion = FocalLoss(gamma=2.0)
-elif loss_fn == "dicefocal":
-    criterion = DiceFocalLoss(sigmoid=True, gamma=2.0)
-
+# %%
+loss_factory = LossFn(loss_fn=loss_fn, alpha=alpha, beta=beta, weight=pos_weight, gamma=2.0, device=device)
+criterion = loss_factory.get_loss()
 
 if optimizer == "adam":
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
