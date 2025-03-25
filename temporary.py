@@ -42,6 +42,7 @@ seed = config['seed']
 np.random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
+random.seed(seed)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
