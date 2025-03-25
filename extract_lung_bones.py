@@ -40,6 +40,7 @@ def process_images(image_paths, mask_paths, window_size=10):
     results = []
 
     for idx, image_path in enumerate(image_paths):
+        print(f"{idx+1}/{len(image_paths)}")
         nifti_image = nib.load(image_path)
         image_hu = nifti_image.get_fdata()
         image_hu = np.squeeze(image_hu) if len(image_hu.shape) == 4 else image_hu
@@ -97,7 +98,8 @@ def process_images(image_paths, mask_paths, window_size=10):
 # Example usage
 if __name__ == '__main__':
 
-    nii_pth = "/media/dysk_a/jr_buler/RJG-gumed/RJG_13-02-25_nii_labels"
+    # nii_pth = "/media/dysk_a/jr_buler/RJG-gumed/RJG_13-02-25_nii_labels"
+    nii_pth = "/users/project1/pt01191/CRC/Data/RJG_13-02-25_nii_labels"
     image_paths = []
     mask_paths = []
 
@@ -122,8 +124,10 @@ if __name__ == '__main__':
             elif 'mapping.pkl' in f:
                 continue
 
+    print("Processing...")
     results = process_images(image_paths, mask_paths, window_size=20)
-    
+    print("Saving...")
+
 
     # save new images and masks after cutting the slices
     # so image now is slice[slice_index_to_cut:]
@@ -144,6 +148,7 @@ if __name__ == '__main__':
         nib.save(nib.Nifti1Image(image_hu, nifti_image.affine), new_image_path)
         nib.save(nib.Nifti1Image(mask, nifti_mask.affine), new_mask_path)
     draw = False
+    print("Finished.")
     if draw:
         for result in results:
             plt.figure(figsize=(12, 6))
