@@ -49,6 +49,8 @@ optimizer = config['training']['optimizer']
 alpha = config['training']['loss_alpha']
 beta = config['training']['loss_beta']
 pos_weight = config['training']['pos_weight']
+if pos_weight == 'None':
+    pos_weight = None
 loss_fn = config['training']['loss_fn']
 
 # SET FIXED SEED FOR REPRODUCIBILITY --------------------------------
@@ -164,6 +166,8 @@ if run:
     run["dataset/test_size"] = len(test_dataset)
     transform_list = [str(t.__class__.__name__) for t in train_transforms.transforms]
     run["dataset/transformations"] = json.dumps(transform_list)
+    run["dataset/val_ids"] = val_ids
+    run["dataset/test_ids"] = test_ids
 
 def collate_fn(batch):
     img_patch, mask_patch, _, _ = zip(*batch)
@@ -221,6 +225,8 @@ for epoch in range(num_epochs):
     total_loss = 0
     total_iou = 0
     total_dice = 0
+    total_tpr = 0
+    total_precision = 0
     num_batches = len(train_dataloader)
     
     for img_patch, mask_patch in train_dataloader:
@@ -236,6 +242,8 @@ for epoch in range(num_epochs):
         total_loss += loss.detach().item()
         total_iou += metrics["IoU"]
         total_dice += metrics["Dice"]
+        total_tpr += metrics["TPR"]
+        total_precision += metrics["Precision"]
         
         loss.backward()
         optimizer.step()
@@ -243,17 +251,23 @@ for epoch in range(num_epochs):
     avg_loss = total_loss / num_batches
     avg_iou = total_iou / num_batches
     avg_dice = total_dice / num_batches
+    avg_tpr = total_tpr / num_batches
+    avg_precision = total_precision / num_batches
 
     if run:
         run["train/loss"].log(avg_loss)
         run["train/IoU"].log(avg_iou)
         run["train/Dice"].log(avg_dice)
+        run["train/TPR"].log(avg_tpr)
+        run["train/Precision"].log(avg_precision)
 
     model.eval()
     val_dataloader.dataset.dataset.set_mode(train_mode=False)
     val_loss = 0
     val_iou = 0
     val_dice = 0
+    val_tpr = 0
+    val_precision = 0
     num_val_batches = len(val_dataloader)
     
     with torch.no_grad():
@@ -270,15 +284,21 @@ for epoch in range(num_epochs):
             val_loss += loss.detach().item()
             val_iou += metrics["IoU"]
             val_dice += metrics["Dice"]
+            val_tpr += metrics["TPR"]
+            val_precision += metrics["Precision"]
 
     avg_val_loss = val_loss / num_val_batches
     avg_val_iou = val_iou / num_val_batches
     avg_val_dice = val_dice / num_val_batches
+    avg_val_tpr = val_tpr / num_val_batches
+    avg_val_precision = val_precision / num_val_batches
 
     if run:
         run["val/loss"].log(avg_val_loss)
         run["val/IoU"].log(avg_val_iou)
         run["val/Dice"].log(avg_val_dice)
+        run["val/TPR"].log(avg_val_tpr)
+        run["val/Precision"].log(avg_val_precision)
 
     if avg_val_loss < best_val_loss:
         best_val_loss = avg_val_loss
