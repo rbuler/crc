@@ -4,3 +4,4 @@ best_model.pth
 .neptune
 unetr_pp
 .venv
+inference_output
