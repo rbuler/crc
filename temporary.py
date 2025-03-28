@@ -44,7 +44,7 @@ torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 random.seed(seed)
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # %%
 train_transforms = mt.Compose([mt.ToTensord(keys=["image", "mask"])])
@@ -64,7 +64,8 @@ ids = []
 for i in range(len(dataset)):
     ids.append(int(dataset.get_patient_id(i)))
 
-explicit_ids_test = [31, 32, 47, 54, 73, 78, 109, 197, 204]
+                                                               # bad res <  #  > tx t0
+explicit_ids_test = [1, 21, 57, 4, 40, 138, 17, 102, 180, 6, 199, 46, 59,  31, 32, 47, 54, 73, 78, 109, 197, 204]
 ids_train_val_test = list(set(ids) - set(explicit_ids_test))
 
 train_size = int(0.75 * len(ids_train_val_test))
@@ -85,14 +86,13 @@ def collate_fn(batch):
     mask_patch = torch.stack(mask_patch)
     return img_patch, mask_patch
 
-train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_fn)
+train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 
 # %%
+weights_path = 'best_model_8e369b78-dfcf-4620-beff-fb1373eae30f.pth'
 
-
-weights_path = 'best_model_03bd4070-76d5-4bb7-ae90-df83ced59d7b.pth'
 weights_path = os.path.join(config['dir']['root'], 'models', weights_path)
 
 model = UNETR_PP(in_channels=1, out_channels=14,
@@ -110,6 +110,8 @@ model.eval()
 
 total_iou = 0
 total_dice = 0
+total_tpr = 0
+total_precision = 0
 probs = 0.5
 
 dataloader = test_dataloader
@@ -118,17 +120,18 @@ num_samples = len(dataloader)
 
 with torch.no_grad():
     dataloader.dataset.dataset.set_mode(train_mode=False)
-    for i, (_, _, image, mask) in enumerate(dataloader):
+    for i, (_, _, image, mask, id) in enumerate(dataloader):
         image = image.to(device, dtype=torch.float32)
         mask = mask.to(device, dtype=torch.long)
         image = image.unsqueeze(0)
         final_output = inferer(inputs=image, network=model)
         final_output = final_output.squeeze(0)
         metrics = evaluate_segmentation(final_output, mask.to(torch.device('cpu')), num_classes=num_classes, prob_thresh=probs)
-        print(f"Patient {i + 1}/{num_samples}: IoU: {metrics['IoU']:.4f}, Dice: {metrics['Dice']:.4f}")
-        id = dataloader.dataset.dataset.get_patient_id(i)
+        print(f"Patient {i + 1}/{num_samples}/id={id}: "
+              f"IoU: {metrics['IoU']:.4f}, Dice: {metrics['Dice']:.4f}, "
+              f"TPR: {metrics['TPR']:.4f}, "
+              f"Precision: {metrics['Precision']:.4f}")
         final_output = (final_output.squeeze(0) > 0.5).cpu().numpy().astype(np.uint8)
-        
         
         mask = mask.squeeze(0).cpu().numpy().astype(np.uint8)
 
@@ -138,13 +141,33 @@ with torch.no_grad():
         combined_output[(mask == 1) & (final_output == 1)] = 3
         
         combined_output_nifti = nib.Nifti1Image(combined_output, np.eye(4))
-        # nib.save(combined_output_nifti, f'temporary/final_output_{id}.nii.gz')
+        nib.save(combined_output_nifti, f'inference_output/final_output_{id}.nii.gz')
         
         total_iou += metrics["IoU"]
         total_dice += metrics["Dice"]
+        total_tpr += metrics["TPR"]
+        total_precision += metrics["Precision"]
 
-avg_iou = total_iou / num_samples
-avg_dice = total_dice / num_samples
+    avg_iou = total_iou / num_samples
+    avg_dice = total_dice / num_samples
+    avg_tpr = total_tpr / num_samples
+    avg_precision = total_precision / num_samples
 
-print(f"Average IoU: {avg_iou:.4f}, Average Dice: {avg_dice:.4f}")
+    print(f"Average IoU: {avg_iou:.4f}, Average Dice: {avg_dice:.4f}, "
+          f"Average TPR: {avg_tpr:.4f}, "
+          f"Average Precision: {avg_precision:.4f}")
+
 # %%
+
+
+
+
+
+
+
+
+
+
+
+
+
