@@ -144,8 +144,8 @@ dataset = CRCDataset_seg(root_dir=config['dir']['root'],
 ids = []
 for i in range(len(dataset)):
     ids.append(int(dataset.get_patient_id(i)))
-
-explicit_ids_test = [31, 32, 47, 54, 73, 78, 109, 197, 204]
+                                                               # bad res <  #  > tx t0
+explicit_ids_test = [1, 21, 57, 4, 40, 138, 17, 102, 180, 6, 199, 46, 59,  31, 32, 47, 54, 73, 78, 109, 197, 204]
 ids_train_val_test = list(set(ids) - set(explicit_ids_test))
 
 train_size = int(0.75 * len(ids_train_val_test))
