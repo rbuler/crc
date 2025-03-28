@@ -367,29 +367,22 @@ def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5
         dice_metric.reset()
         mean_iou_metric.reset()
         tp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 1)).item()
-        tn = torch.sum((valid_pred_labels == 0) & (valid_true_masks == 0)).item()
         fp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 0)).item()
         fn = torch.sum((valid_pred_labels == 0) & (valid_true_masks == 1)).item()
 
         tpr = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
 
         return {
             "IoU": mean_iou,
             "Dice": mean_dice,
             "TPR": tpr,
-            "FPR": fpr,
             "Precision": precision,
-            "Specificity": specificity,
         }
     else:
         return {
             "IoU": 0.0,
             "Dice": 0.0,
             "TPR": 0.0,
-            "FPR": 0.0,
             "Precision": 0.0,
-            "Specificity": 0.0,
         }
