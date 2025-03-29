@@ -169,13 +169,8 @@ if run:
     run["dataset/val_ids"] = str(val_ids)
     run["dataset/test_ids"] = str(test_ids)
 
-def collate_fn(batch):
-    img_patch, mask_patch, _, _ = zip(*batch)
-    img_patch = torch.stack(img_patch)
-    mask_patch = torch.stack(mask_patch)
-    return img_patch, mask_patch
 
-train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_fn)
+train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 
@@ -229,7 +224,7 @@ for epoch in range(num_epochs):
     total_precision = 0
     num_batches = len(train_dataloader)
     
-    for img_patch, mask_patch in train_dataloader:
+    for img_patch, mask_patch, _, _, _ in train_dataloader:
         img_patch, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.float32)
         optimizer.zero_grad()
         img_patch = img_patch.permute(1, 0, 2, 3, 4)
@@ -271,7 +266,7 @@ for epoch in range(num_epochs):
     num_val_batches = len(val_dataloader)
     
     with torch.no_grad():
-        for _, _, image, mask in val_dataloader:
+        for _, _, image, mask, _ in val_dataloader:
             image = image.to(device, dtype=torch.float32)
             mask = mask.to(device, dtype=torch.long)
             image = image.unsqueeze(0)
@@ -346,7 +341,7 @@ probs = 0.5
 
 with torch.no_grad():
     test_dataloader.dataset.dataset.set_mode(train_mode=False)
-    for i, (_, _, image, mask) in enumerate(test_dataloader):
+    for i, (_, _, image, mask, _) in enumerate(test_dataloader):
         image = image.to(device, dtype=torch.float32)
         mask = mask.to(device, dtype=torch.long)
         image = image.unsqueeze(0)
