@@ -53,6 +53,14 @@ if pos_weight == 'None':
     pos_weight = None
 loss_fn = config['training']['loss_fn']
 
+if config['neptune']:
+    run = neptune.init_run(project="ProjektMMG/CRC")
+    run["parameters/config"] = config
+    run["sys/group_tags"].add(["Seg3D"])
+else:
+    run = None
+
+
 # SET FIXED SEED FOR REPRODUCIBILITY --------------------------------
 seed = config['seed']
 np.random.seed(seed)
@@ -61,14 +69,6 @@ torch.cuda.manual_seed(seed)
 random.seed(seed)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-if config['neptune']:
-    run = neptune.init_run(project="ProjektMMG/CRC")
-    run["parameters/config"] = config
-    run["sys/group_tags"].add(["Seg3D"])
-else:
-    run = None
-
 # %%
 class LossFn:
     def __init__(self, loss_fn, alpha=0.25, beta=0.75, weight=None, gamma=2.0, device=None):
@@ -166,8 +166,8 @@ if run:
     run["dataset/test_size"] = len(test_dataset)
     transform_list = [str(t.__class__.__name__) for t in train_transforms.transforms]
     run["dataset/transformations"] = json.dumps(transform_list)
-    run["dataset/val_ids"] = val_ids
-    run["dataset/test_ids"] = test_ids
+    run["dataset/val_ids"] = str(val_ids)
+    run["dataset/test_ids"] = str(test_ids)
 
 def collate_fn(batch):
     img_patch, mask_patch, _, _ = zip(*batch)
