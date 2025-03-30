@@ -14,8 +14,10 @@ import logging
 import numpy as np
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from sklearn.model_selection import KFold
 
 import monai.transforms as mt
+from monai.networks.nets import SwinUNETR
 from monai.losses import TverskyLoss, FocalLoss, DiceCELoss, DiceFocalLoss, DiceLoss
 from monai.inferers import SlidingWindowInferer
 # from pytorch3dunet.unet3d.model import UNet3D
@@ -52,6 +54,8 @@ pos_weight = config['training']['pos_weight']
 if pos_weight == 'None':
     pos_weight = None
 loss_fn = config['training']['loss_fn']
+
+fold = config['fold']
 
 if config['neptune']:
     run = neptune.init_run(project="ProjektMMG/CRC")
@@ -148,17 +152,21 @@ for i in range(len(dataset)):
 explicit_ids_test = [1, 21, 57, 4, 40, 138, 17, 102, 180, 6, 199, 46, 59,  31, 32, 47, 54, 73, 78, 109, 197, 204]
 ids_train_val_test = list(set(ids) - set(explicit_ids_test))
 
-train_size = int(0.75 * len(ids_train_val_test))
-val_size = int(0.2 * len(ids_train_val_test))
-test_size = len(ids_train_val_test) - train_size - val_size + len(explicit_ids_test)
 
-train_ids = random.sample(ids_train_val_test, train_size)
-val_ids = random.sample(list(set(ids_train_val_test) - set(train_ids)), val_size)
-test_ids = list((set(ids_train_val_test) - set(train_ids) - set(val_ids)) | set(explicit_ids_test))
+kf = KFold(n_splits=5, shuffle=True, random_state=seed)
+folds = list(kf.split(ids_train_val_test))
+# %%
+for fold_idx, (train_idx, val_idx) in enumerate(folds):
+    if fold_idx + 1 != fold:
+        continue
 
-train_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in train_ids])
-val_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in val_ids])
-test_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in test_ids])
+    train_ids = [ids_train_val_test[i] for i in train_idx]
+    val_ids = [ids_train_val_test[i] for i in val_idx]
+    test_ids = explicit_ids_test
+
+    train_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in train_ids])
+    val_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in val_ids])
+    test_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in test_ids])
 
 if run:
     run["dataset/train_size"] = len(train_dataset)
@@ -169,23 +177,30 @@ if run:
     run["dataset/val_ids"] = str(val_ids)
     run["dataset/test_ids"] = str(test_ids)
 
-
 train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 
 # %%
 # model = UNet3D(in_channels=1, out_channels=num_classes, final_sigmoid=True).to(device)
-model = UNETR_PP(in_channels=1, out_channels=14,
-                 img_size=tuple(patch_size),
-                 depths=[3, 3, 3, 3],
-                 dims=[32, 64, 128, 256], do_ds=False)
 
-weights_path = os.path.join(config['dir']['root'], "models", "model_final_checkpoint.model")
-checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
+if 0:
+    model = UNETR_PP(in_channels=1, out_channels=14,
+                    img_size=tuple(patch_size),
+                    depths=[3, 3, 3, 3],
+                    dims=[32, 64, 128, 256], do_ds=False)
+    weights_path = os.path.join(config['dir']['root'], "models", "model_final_checkpoint.model")
+    checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
+    model.load_state_dict(checkpoint['state_dict'], strict=False)
+    model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
 
-model.load_state_dict(checkpoint['state_dict'], strict=False)
-model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+if 1:
+    model = SwinUNETR(img_size=tuple(patch_size), in_channels=1, out_channels=14, feature_size=48)
+    weights_path = os.path.join(config['dir']['root'], "models", "model.pt")
+    checkpoint = torch.load(weights_path, map_location=device)
+    model.load_state_dict(checkpoint)
+    model.out.conv = torch.nn.Conv3d(in_channels=model.out.conv.in_channels, out_channels=1, kernel_size=(1, 1, 1))
+
 model = model.to(device)
 # %%
 loss_factory = LossFn(loss_fn=loss_fn, alpha=alpha, beta=beta, weight=pos_weight, gamma=2.0, device=device)
