@@ -10,6 +10,7 @@ import logging
 import numpy as np
 import nibabel as nib
 from torch.utils.data import DataLoader
+from sklearn.model_selection import KFold
 
 import monai.transforms as mt
 from monai.inferers import SlidingWindowInferer
@@ -36,6 +37,7 @@ patch_size = ast.literal_eval(config['training']['patch_size'])
 stride = config['training']['stride']
 batch_size = config['training']['batch_size']
 num_workers = config['training']['num_workers']
+fold = config['fold']
 
 # SET FIXED SEED FOR REPRODUCIBILITY --------------------------------
 seed = config['seed']
@@ -63,28 +65,25 @@ dataset = CRCDataset_seg(root_dir=config['dir']['root'],
 ids = []
 for i in range(len(dataset)):
     ids.append(int(dataset.get_patient_id(i)))
-
                                                                # bad res <  #  > tx t0
 explicit_ids_test = [1, 21, 57, 4, 40, 138, 17, 102, 180, 6, 199, 46, 59,  31, 32, 47, 54, 73, 78, 109, 197, 204]
 ids_train_val_test = list(set(ids) - set(explicit_ids_test))
 
-train_size = int(0.75 * len(ids_train_val_test))
-val_size = int(0.2 * len(ids_train_val_test))
-test_size = len(ids_train_val_test) - train_size - val_size + len(explicit_ids_test)
 
-train_ids = random.sample(ids_train_val_test, train_size)
-val_ids = random.sample(list(set(ids_train_val_test) - set(train_ids)), val_size)
-test_ids = list((set(ids_train_val_test) - set(train_ids) - set(val_ids)) | set(explicit_ids_test))
+kf = KFold(n_splits=5, shuffle=True, random_state=seed)
+folds = list(kf.split(ids_train_val_test))
+# %%
+for fold_idx, (train_idx, val_idx) in enumerate(folds):
+    if fold_idx + 1 != fold:
+        continue
 
-train_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in train_ids])
-val_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in val_ids])
-test_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in test_ids])
+    train_ids = [ids_train_val_test[i] for i in train_idx]
+    val_ids = [ids_train_val_test[i] for i in val_idx]
+    test_ids = explicit_ids_test
 
-def collate_fn(batch):
-    img_patch, mask_patch, _, _ = zip(*batch)
-    img_patch = torch.stack(img_patch)
-    mask_patch = torch.stack(mask_patch)
-    return img_patch, mask_patch
+    train_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in train_ids])
+    val_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in val_ids])
+    test_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in test_ids])
 
 train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
@@ -141,7 +140,7 @@ with torch.no_grad():
         combined_output[(mask == 1) & (final_output == 1)] = 3
         
         combined_output_nifti = nib.Nifti1Image(combined_output, np.eye(4))
-        nib.save(combined_output_nifti, f'inference_output/final_output_{id}.nii.gz')
+        # nib.save(combined_output_nifti, f'inference_output/final_output_{id}.nii.gz')
         
         total_iou += metrics["IoU"]
         total_dice += metrics["Dice"]
