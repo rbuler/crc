@@ -8,10 +8,16 @@ training:
   stride: 32
   batch_size: 1
   num_workers: 0
-  epochs: 2000
+  epochs: 450
   patience: 100
   lr: 0.0001
+  wd: 0.001
   optimizer: 'adam' # 'sgd'
+  loss_alpha: 1.
+  loss_beta:  50.
+  pos_weight: 5.
+  loss_fn: "hybrid"
+
 
 dir:
   root: '/media/dysk_a/jr_buler/RJG-gumed/'

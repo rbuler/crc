@@ -148,7 +148,7 @@ class CRCDataset_seg(Dataset):
             transformed_patches = self.transforms[1](data_to_transform)  # val_transforms
             img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
 
-        return img_patch, mask_patch, image, mask
+        return img_patch, mask_patch, image, mask, self.get_patient_id(idx).strip("'")
 
 
     def __len__(self):
@@ -210,6 +210,13 @@ class CRCDataset_seg(Dataset):
         w_idxs = list(range(0, W - w_size + 1, self.stride))
         d_idxs = list(range(0, D - d_size + 1, self.stride))
 
+        if h_idxs[-1] != H - h_size:
+            h_idxs.append(H - h_size)
+        if w_idxs[-1] != W - w_size:
+            w_idxs.append(W - w_size)
+        if d_idxs[-1] != D - d_size:
+            d_idxs.append(D - d_size)
+
         patch_candidates = []
 
         for h in h_idxs:
@@ -217,7 +224,7 @@ class CRCDataset_seg(Dataset):
                 for d in d_idxs:
                     img_patch = image[h:h+h_size, w:w+w_size, d:d+d_size]
                     mask_patch = mask[h:h+h_size, w:w+w_size, d:d+d_size]
-                    if torch.mean((img_patch < 0.001).float()) < 0.3:
+                    if torch.mean((img_patch < 0.001).float()) < 0.3 or torch.any(mask_patch > 0):
                         patch_candidates.append((img_patch, mask_patch))
 
         foreground_patches = [p for p in patch_candidates if torch.any(p[1] > 0)]
