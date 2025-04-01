@@ -35,8 +35,8 @@ class CRCDataset_seg(Dataset):
         self.mapping_path = []
         
         self.cut_images_path = []
+        self.cut_filtered_image_path = []
         self.cut_mask_path = []
-
         self.transforms = transforms
         self.train_mode = False
 
@@ -56,6 +56,8 @@ class CRCDataset_seg(Dataset):
                     self.cut_mask_path.append(f)
                 elif '_cut.nii.gz' in f:
                     self.cut_images_path.append(f)
+                elif '_body.nii.gz' in f:
+                    self.cut_filtered_image_path.append(f)
                 elif 'instance_mask.nii.gz' in f:
                     self.instance_masks_path.append(f)
                 elif 'nii.gz' in f:
@@ -88,17 +90,23 @@ class CRCDataset_seg(Dataset):
 
     def __getitem__(self, idx):
         cut = True
+        filtered = True
         if not cut:
             image_path = self.images_path[idx]
             mask_path = self.masks_path[idx]
         else:
-            image_path = self.cut_images_path[idx]
+            if filtered:
+                image_path = self.cut_filtered_image_path[idx]
+            else:
+                image_path = self.cut_images_path[idx]
             mask_path = self.cut_mask_path[idx]
 
         instance_mask_path = self.instance_masks_path[idx]
 
         image = np.asarray(nib.load(image_path).dataobj)
         image = torch.from_numpy(image)
+        mask = np.asarray(nib.load(mask_path).dataobj)
+        mask = torch.from_numpy(mask)
 
         mask = np.asarray(nib.load(mask_path).dataobj)
         mask = torch.from_numpy(mask)
