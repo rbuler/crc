@@ -1,5 +1,6 @@
 # %%
 import os
+import re
 import sys
 import ast
 import yaml
@@ -90,7 +91,24 @@ val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_worker
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 
 # %%
-weights_path = 'best_model_8e369b78-dfcf-4620-beff-fb1373eae30f.pth'
+weights_path = 'best_model_da3c3744-72e0-4e71-a3f3-4c5d22723ebb.pth'
+
+# 50:50
+# best_model_da3c3744-72e0-4e71-a3f3-4c5d22723ebb.pth   # 5
+# best_model_03b67c44-9f9f-4081-b33d-a447d4e3145d.pth   # 4
+# best_model_ca393b0a-c2f3-4d2d-b96a-9f04fcb1b4a9.pth   # 3
+# best_model_d803c025-7605-4b4e-9088-54912c1661c5.pth   # 2
+# best_model_6638b88b-133f-4f78-a9d1-168a786d171a.pth   # 1
+
+# 70:30
+# best_model_8b755844-fa9c-4264-bee8-6b8165a8d718.pth   # 5
+# best_model_65e80ea4-9e33-4be5-9fa9-986f88be5ba7.pth   # 4
+# best_model_809a461c-c382-4359-9530-e2a52bd6e5b3.pth   # 3
+# best_model_217e315a-705a-4e9f-bd31-8bd9f0c9b0f2.pth   # 2
+# best_model_d61571b2-0565-48af-be4d-4c83dbb33a5d.pth   # 1
+
+
+
 
 weights_path = os.path.join(config['dir']['root'], 'models', weights_path)
 
@@ -104,7 +122,37 @@ checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
 model.load_state_dict(checkpoint)
 model = model.to(device)
 # %%
-inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=1, overlap=0.5, device=torch.device('cpu'))
+nii_pth = "/media/dysk_a/jr_buler/RJG-gumed/RJG_13-02-25_nii_labels"
+# nii_pth = "/users/project1/pt01191/CRC/Data/RJG_13-02-25_nii_labels"
+cut_filter_mask_paths = []
+pattern = re.compile(r'^\d+a$') # take only those ##a
+
+for root, dirs, files in os.walk(nii_pth, topdown=False):
+    for name in files:
+        f = os.path.join(root, name)
+        folder_name = f.split('/')[-2]
+        if not pattern.match(folder_name):
+            continue
+        if 'labels.nii.gz' in f:
+            continue
+        elif 'labels_cut.nii.gz' in f:
+            continue
+        elif '_cut.nii.gz' in f:
+            continue
+        elif '_body.nii.gz' in f:
+            continue
+        elif 'cut_filterMask.nii.gz' in f:
+            cut_filter_mask_paths.append(f)
+        elif 'instance_mask.nii.gz' in f:
+            continue
+        elif 'nii.gz' in f:
+            continue
+        elif 'mapping.pkl' in f:
+            continue
+
+
+
+inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=1, mode="constant", overlap=0.75, sigma_scale=0.25, device=torch.device('cpu'))
 model.eval()
 
 total_iou = 0
@@ -113,13 +161,30 @@ total_tpr = 0
 total_precision = 0
 probs = 0.5
 
-dataloader = test_dataloader
-print(test_ids)
+dataloader = val_dataloader
+print(val_ids)
 num_samples = len(dataloader)
 
 with torch.no_grad():
     dataloader.dataset.dataset.set_mode(train_mode=False)
     for i, (_, _, image, mask, id) in enumerate(dataloader):
+        if isinstance(id, (list, tuple)):
+            id = id[0]
+        if not isinstance(id, str):
+            id = str(id)
+
+        patient_id_str = ''.join(filter(str.isdigit, id))
+
+        filter_mask_path = next(
+            (path for path in cut_filter_mask_paths
+             if ''.join(filter(str.isdigit, path.split('/')[-2].split('_')[0])) == patient_id_str),
+            None
+        )
+
+        filter_mask = nib.load(filter_mask_path).get_fdata()
+        filter_mask = torch.from_numpy(filter_mask)
+        filter_mask = filter_mask.permute(2, 0, 1)
+
         image = image.to(device, dtype=torch.float32)
         mask = mask.to(device, dtype=torch.long)
         image = image.unsqueeze(0)
@@ -138,9 +203,11 @@ with torch.no_grad():
         combined_output[mask == 1] = 1
         combined_output[final_output == 1] = 2
         combined_output[(mask == 1) & (final_output == 1)] = 3
-        
+        combined_output = combined_output * filter_mask.numpy()
+        combined_output = combined_output.astype(np.uint8)
+
         combined_output_nifti = nib.Nifti1Image(combined_output, np.eye(4))
-        # nib.save(combined_output_nifti, f'inference_output/final_output_{id}.nii.gz')
+        nib.save(combined_output_nifti, f'inference_output/final_output_filtered_{fold}_{id}.nii.gz')
         
         total_iou += metrics["IoU"]
         total_dice += metrics["Dice"]
