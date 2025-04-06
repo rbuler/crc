@@ -36,6 +36,7 @@ class CRCDataset_seg(Dataset):
         
         self.cut_images_path = []
         self.cut_filtered_image_path = []
+        # self.cut_filtered_bodyMask = []
         self.cut_mask_path = []
         self.transforms = transforms
         self.train_mode = False
@@ -58,6 +59,8 @@ class CRCDataset_seg(Dataset):
                     self.cut_images_path.append(f)
                 elif '_body.nii.gz' in f:
                     self.cut_filtered_image_path.append(f)
+                elif 'cut_filterMask.nii.gz' in f:
+                    continue
                 elif 'instance_mask.nii.gz' in f:
                     self.instance_masks_path.append(f)
                 elif 'nii.gz' in f:
