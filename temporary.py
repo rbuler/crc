@@ -152,7 +152,7 @@ for root, dirs, files in os.walk(nii_pth, topdown=False):
 
 
 
-inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=1, mode="constant", overlap=0.75, sigma_scale=0.25, device=torch.device('cpu'))
+inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=1, mode="gaussian", overlap=0.75, device=torch.device('cpu'))
 model.eval()
 
 total_iou = 0
@@ -172,29 +172,32 @@ with torch.no_grad():
             id = id[0]
         if not isinstance(id, str):
             id = str(id)
-
         patient_id_str = ''.join(filter(str.isdigit, id))
 
         filter_mask_path = next(
             (path for path in cut_filter_mask_paths
-             if ''.join(filter(str.isdigit, path.split('/')[-2].split('_')[0])) == patient_id_str),
+             if ''.join(filter(str.isdigit, os.path.basename(path).split('_')[0].split(' ')[0])) == patient_id_str),
             None
         )
-
         filter_mask = nib.load(filter_mask_path).get_fdata()
+        filter_mask = filter_mask.astype(np.float32)
         filter_mask = torch.from_numpy(filter_mask)
-        filter_mask = filter_mask.permute(2, 0, 1)
+        filter_mask = filter_mask.permute(2, 0, 1).unsqueeze(0)
 
         image = image.to(device, dtype=torch.float32)
         mask = mask.to(device, dtype=torch.long)
         image = image.unsqueeze(0)
         final_output = inferer(inputs=image, network=model)
         final_output = final_output.squeeze(0)
+        final_output[filter_mask < 0.5]  = -999.
         metrics = evaluate_segmentation(final_output, mask.to(torch.device('cpu')), num_classes=num_classes, prob_thresh=probs)
         print(f"Patient {i + 1}/{num_samples}/id={id}: "
               f"IoU: {metrics['IoU']:.4f}, Dice: {metrics['Dice']:.4f}, "
               f"TPR: {metrics['TPR']:.4f}, "
               f"Precision: {metrics['Precision']:.4f}")
+        # draw histogram of logit values
+  
+        final_output = torch.sigmoid(final_output)
         final_output = (final_output.squeeze(0) > 0.5).cpu().numpy().astype(np.uint8)
         
         mask = mask.squeeze(0).cpu().numpy().astype(np.uint8)
@@ -203,8 +206,6 @@ with torch.no_grad():
         combined_output[mask == 1] = 1
         combined_output[final_output == 1] = 2
         combined_output[(mask == 1) & (final_output == 1)] = 3
-        combined_output = combined_output * filter_mask.numpy()
-        combined_output = combined_output.astype(np.uint8)
 
         combined_output_nifti = nib.Nifti1Image(combined_output, np.eye(4))
         nib.save(combined_output_nifti, f'inference_output/final_output_filtered_{fold}_{id}.nii.gz')
@@ -213,7 +214,6 @@ with torch.no_grad():
         total_dice += metrics["Dice"]
         total_tpr += metrics["TPR"]
         total_precision += metrics["Precision"]
-
     avg_iou = total_iou / num_samples
     avg_dice = total_dice / num_samples
     avg_tpr = total_tpr / num_samples
