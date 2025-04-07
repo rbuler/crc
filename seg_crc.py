@@ -58,7 +58,7 @@ fold = config['fold']
 if config['neptune']:
     run = neptune.init_run(project="ProjektMMG/CRC")
     run["parameters/config"] = config
-    run["sys/group_tags"].add(["Seg3D"])
+    run["sys/group_tags"].add([mode])
 else:
     run = None
 
@@ -68,7 +68,7 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 random.seed(seed)
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # %%
 class LossFn:
     def __init__(self, loss_fn, alpha=0.25, beta=0.75, weight=None, gamma=2.0, device=None):
@@ -122,7 +122,7 @@ def get_optimizer(optimizer_name, model_params, lr, weight_decay):
 # %%
 train_transforms = mt.Compose([
     # center crop if mode 2d
-    mt.CenterSpatialCropd(keys=["image", "mask"], roi_size=(256, 256)) if mode == '2d' else mt.Lambda(lambda x: x),
+    mt.CenterSpatialCropd(keys=["image", "mask"], roi_size=patch_size) if mode == '2d' else mt.Lambda(lambda x: x),
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=0),
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=1),
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=2) if mode == '3d' else mt.Lambda(lambda x: x),
@@ -136,6 +136,7 @@ train_transforms = mt.Compose([
 ])
 
 val_transforms = mt.Compose([
+    mt.CenterSpatialCropd(keys=["image", "mask"], roi_size=patch_size) if mode == '2d' else mt.Lambda(lambda x: x),
     mt.ToTensord(keys=["image", "mask"]),
 ])
 

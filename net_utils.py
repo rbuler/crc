@@ -79,15 +79,19 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                 targets = mask.to(device, dtype=torch.long)
 
                 if mode == '2d':
+                    inputs = inputs.permute(1, 0, 2, 3)
+                    targets = targets.permute(1, 0, 2, 3)
                     logits = model(inputs)
                 elif mode == '3d':
                     inputs = inputs.unsqueeze(0)
                     targets = targets.unsqueeze(0)
+                    targets = targets.to(torch.device('cpu'))
                     logits = inferer(inputs=inputs, network=model)
 
-                metrics = evaluate_segmentation(logits, targets.to(torch.device('cpu')), num_classes=num_classes, prob_thresh=0.5)
+
+                metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=0.5)
                 criterion = criterion.to(device=logits.device)
-                loss = criterion(logits,  targets.to(torch.device('cpu')))
+                loss = criterion(logits,  targets)
                 val_loss += loss.detach().item()
                 val_iou += metrics["IoU"]
                 val_dice += metrics["Dice"]
