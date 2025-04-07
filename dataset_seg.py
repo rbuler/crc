@@ -3,7 +3,6 @@ import re
 import torch
 import random
 import numpy as np
-import pandas as pd
 import nibabel as nib
 from torch.utils.data import Dataset
 import logging
@@ -20,7 +19,8 @@ class CRCDataset_seg(Dataset):
                  transforms=None,
                  patch_size: tuple = (64, 64, 64),
                  stride: int = 32,
-                 num_patches_per_sample: int = 50):  
+                 num_patches_per_sample: int = 50,
+                 mode = '3d'):  
                          
         self.root = root_dir
         self.nii_dir = nii_dir
@@ -40,6 +40,7 @@ class CRCDataset_seg(Dataset):
         self.cut_mask_path = []
         self.transforms = transforms
         self.train_mode = False
+        self.mode = mode
 
         nii_pth = os.path.join(self.root, self.nii_dir)
 
@@ -68,27 +69,6 @@ class CRCDataset_seg(Dataset):
                 elif 'mapping.pkl' in f:
                     self.mapping_path.append(f)
 
-
-        clinical_data_dir = os.path.join(self.root, self.clinical_data)
-        default_missing = pd._libs.parsers.STR_NA_VALUES
-        self.clinical_data = pd.read_csv(
-            clinical_data_dir,
-            delimiter=';',
-            encoding='utf-8',
-            index_col=False,
-            na_filter=True,
-            na_values=default_missing)
-        
-        self.clinical_data.columns = self.clinical_data.columns.str.strip()
-        self.clinical_data = self.clinical_data[config['clinical_data_attributes'].keys()]
-        self.clinical_data.dropna(subset=['Nr pacjenta'], inplace=True)
-
-        for column, dtype in config['clinical_data_attributes'].items():
-            self.clinical_data[column] = self.clinical_data[column].astype(dtype)
-
-        self.clinical_data = self.clinical_data.reset_index(drop=True)        
-        self.clinical_data.rename(columns={'Nr pacjenta': 'patient_id'}, inplace=True)
-        self._clean_tnm_clinical_data()
 
 
     def __getitem__(self, idx):
@@ -139,27 +119,42 @@ class CRCDataset_seg(Dataset):
 
 
         # temporary cuz model requires patch of shape (64 128 128)
-        image = image.permute(2, 0, 1)
+        image = image.permute(2, 0, 1)   # D, H, W
         mask = mask.permute(2, 0, 1)
 
-        patches = self.extract_patches(image, mask)
-        num_to_select = min(8, len(patches))
+        if self.mode == '3d':
 
-        selected_patches = random.sample(patches, num_to_select)
-        img_patch = torch.stack([p[0] for p in selected_patches])
-        mask_patch = torch.stack([p[1] for p in selected_patches])
+            patches = self.extract_patches(image, mask)
+            num_to_select = min(8, len(patches))
 
+            selected_patches = random.sample(patches, num_to_select)
+            img_patch = torch.stack([p[0] for p in selected_patches])
+            mask_patch = torch.stack([p[1] for p in selected_patches])
+
+            
+            if (self.transforms is not None) and self.train_mode:
+                data_to_transform = {"image": img_patch, "mask": mask_patch}
+                transformed_patches = self.transforms[0](data_to_transform)  # train_transforms
+                img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
+            elif (self.transforms is not None) and not self.train_mode:
+                data_to_transform = {"image": img_patch, "mask": mask_patch}
+                transformed_patches = self.transforms[1](data_to_transform)  # val_transforms
+                img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
+
+            return img_patch, mask_patch, image, mask, self.get_patient_id(idx).strip("'")
         
-        if (self.transforms is not None) and self.train_mode:
-            data_to_transform = {"image": img_patch, "mask": mask_patch}
-            transformed_patches = self.transforms[0](data_to_transform)  # train_transforms
-            img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
-        elif (self.transforms is not None) and not self.train_mode:
-            data_to_transform = {"image": img_patch, "mask": mask_patch}
-            transformed_patches = self.transforms[1](data_to_transform)  # val_transforms
-            img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
+        elif self.mode == '2d':
+            if (self.transforms is not None) and self.train_mode:
+                data_to_transform = {"image": image, "mask": mask}
+                transformed = self.transforms[0](data_to_transform)  # train_transforms
+                image, mask = transformed["image"], transformed["mask"]
+            elif (self.transforms is not None) and not self.train_mode:
+                data_to_transform = {"image": img_patch, "mask": mask_patch}
+                transformed = self.transforms[1](data_to_transform)  # val_transforms
+                image, mask = transformed["image"], transformed["mask"]
 
-        return img_patch, mask_patch, image, mask, self.get_patient_id(idx).strip("'")
+            return torch.zeros(1), torch.zeros(1), image, mask, self.get_patient_id(idx).strip("'")
+
 
 
     def __len__(self):
@@ -183,33 +178,6 @@ class CRCDataset_seg(Dataset):
         normalized = (ct_windowed - lower_bound) / (upper_bound - lower_bound)
         
         return normalized
-
-
-    def _clean_tnm_clinical_data(self):
-
-        self.clinical_data = self.clinical_data[
-            self.clinical_data['TNM wg mnie'].notna() & (self.clinical_data['TNM wg mnie'] != '')]
-        
-        self.clinical_data = self.clinical_data[
-            self.clinical_data['TNM wg mnie'].str.startswith('T')]
-        
-        self.clinical_data.dropna(how='all', axis=0, inplace=True)
-        self.clinical_data.dropna(subset=['TNM wg mnie'], inplace=True)
-
-        self.clinical_data = self.clinical_data[
-            self.clinical_data['TNM wg mnie'].str.contains(r'T', regex=True) &
-            self.clinical_data['TNM wg mnie'].str.contains(r'N', regex=True)
-        ]
-
-
-        def make_lower_case(tnm_string):
-            return ''.join([char.lower() if char in ['A', 'B', 'C', 'X'] else char for char in tnm_string])
-
-        self.clinical_data['TNM wg mnie'] = self.clinical_data['TNM wg mnie'].apply(make_lower_case)
-    
-        self.clinical_data['wmT'] = self.clinical_data['TNM wg mnie'].str.extract(r'T([0-9]+[a-b]?|x|is)?')
-        self.clinical_data['wmN'] = self.clinical_data['TNM wg mnie'].str.extract(r'N([0-9]+[a-c]?)?')
-        self.clinical_data['wmM'] = self.clinical_data['TNM wg mnie'].str.extract(r'M([0-9]+)?')
 
 
     def extract_patches(self, image, mask):
