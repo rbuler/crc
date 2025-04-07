@@ -33,9 +33,9 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                 inputs = inputs.permute(1, 0, 2, 3)
                 targets = targets.permute(1, 0, 2, 3)
             elif mode == '3d':
-                inputs, mask_patch = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.float32)
-                img_patch = img_patch.permute(1, 0, 2, 3, 4)
-                targets = mask_patch.permute(1, 0, 2, 3, 4)
+                inputs, targets = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.float32)
+                inputs = inputs.permute(1, 0, 2, 3, 4)
+                targets = targets.permute(1, 0, 2, 3, 4)
         # outputs, logits = model(img_patch, return_logits=True)
 
             optimizer.zero_grad()
@@ -76,13 +76,13 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         with torch.no_grad():
             for _, _, image, mask, _ in val_dataloader:
                 inputs = image.to(device, dtype=torch.float32)
-                inputs = inputs.unsqueeze(0)
                 targets = mask.to(device, dtype=torch.long)
-                targets = targets.unsqueeze(0)
 
                 if mode == '2d':
                     logits = model(inputs)
                 elif mode == '3d':
+                    inputs = inputs.unsqueeze(0)
+                    targets = targets.unsqueeze(0)
                     logits = inferer(inputs=inputs, network=model)
 
                 metrics = evaluate_segmentation(logits, targets.to(torch.device('cpu')), num_classes=num_classes, prob_thresh=0.5)

@@ -149,7 +149,7 @@ class CRCDataset_seg(Dataset):
                 transformed = self.transforms[0](data_to_transform)  # train_transforms
                 image, mask = transformed["image"], transformed["mask"]
             elif (self.transforms is not None) and not self.train_mode:
-                data_to_transform = {"image": img_patch, "mask": mask_patch}
+                data_to_transform = {"image": image, "mask": mask}
                 transformed = self.transforms[1](data_to_transform)  # val_transforms
                 image, mask = transformed["image"], transformed["mask"]
 
