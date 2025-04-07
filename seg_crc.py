@@ -155,8 +155,8 @@ dataset = CRCDataset_seg(root_dir=root,
 ids = []
 for i in range(len(dataset)):
     ids.append(int(dataset.get_patient_id(i)))
-                                                               # bad res <  #  > tx t0
-explicit_ids_test = [1, 21, 57, 4, 40, 138, 17, 102, 180, 6, 199, 46, 59,  31, 32, 47, 54, 73, 78, 109, 197, 204]
+                                                               # bad res <  #enter > tx t0
+explicit_ids_test = [31, 32, 47, 54, 78, 109, 73, 197, 204]
 ids_train_val_test = list(set(ids) - set(explicit_ids_test))
 kf = KFold(n_splits=5, shuffle=True, random_state=seed)
 folds = list(kf.split(ids_train_val_test))
@@ -182,7 +182,14 @@ if run:
     run["dataset/val_ids"] = str(val_ids)
     run["dataset/test_ids"] = str(test_ids)
 
-train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+if mode == '2d':
+    def collate_fn(batch):
+        image_patches, mask_patches, images, masks, ids = zip(*batch)
+        return list(image_patches), list(mask_patches), list(images), list(masks), list(ids)
+elif mode == '3d':
+    collate_fn = None
+
+train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_fn)
 val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 

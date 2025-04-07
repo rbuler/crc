@@ -29,9 +29,11 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         num_batches = len(train_dataloader)
         for img_patch, mask_patch, image, mask, _ in train_dataloader:
             if mode == '2d':
-                inputs, targets = image.to(device, dtype=torch.float32), mask.to(device, dtype=torch.float32)
-                inputs = inputs.permute(1, 0, 2, 3)
-                targets = targets.permute(1, 0, 2, 3)
+                inputs = [img.unsqueeze(1).to(device, dtype=torch.float32) for img in image]   # (D, 1, H, W)
+                targets = [msk.unsqueeze(1).to(device, dtype=torch.float32) for msk in mask]   # (D, 1, H, W)
+                inputs = torch.cat(inputs, dim=0)  # (sum D, 1, H, W)
+                targets = torch.cat(targets, dim=0)
+
             elif mode == '3d':
                 inputs, targets = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.float32)
                 inputs = inputs.permute(1, 0, 2, 3, 4)
@@ -158,14 +160,16 @@ def test_net(mode, model, best_model_path, test_dataloader, device, num_classes=
         test_dataloader.dataset.dataset.set_mode(train_mode=False)
         for i, (_, _, image, mask, _) in enumerate(test_dataloader):
             inputs = image.to(device, dtype=torch.float32)
-            inputs = inputs.unsqueeze(0)
             targets = mask.to(device, dtype=torch.long)
 
             if mode ==  '2d':
+                inputs = inputs.permute(1, 0, 2, 3)
+                targets = targets.permute(1, 0, 2, 3)
                 logits = model(inputs)
             elif mode =='3d':
+                inputs = inputs.unsqueeze(0)
+                targets = targets.unsqueeze(0)
                 logits = inferer(inputs=inputs, network=model)
-                logits = logits.squeeze(0)
             
             metrics = evaluate_segmentation(logits, targets.to(torch.device('cpu')), num_classes=num_classes, prob_thresh=probs)
             
