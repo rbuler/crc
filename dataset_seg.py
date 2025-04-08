@@ -144,10 +144,36 @@ class CRCDataset_seg(Dataset):
             return img_patch, mask_patch, image, mask, self.get_patient_id(idx).strip("'")
         
         elif self.mode == '2d':
+
             if (self.transforms is not None) and self.train_mode:
+
+                slice_indices = list(range(image.shape[0]))
+                random.shuffle(slice_indices)
+                selected_slices = []
+                found_masked = False
+                found_unmasked = False
+            
+                for i in slice_indices:
+                    if torch.any(mask[i] > 0) and not found_masked:
+                        selected_slices.append(i)
+                        found_masked = True
+                    elif not torch.any(mask[i] > 0) and not found_unmasked:
+                        selected_slices.append(i)
+                        found_unmasked = True
+                    if found_masked and found_unmasked:
+                        break
+                # no masked slices exist, select first two slices
+                if len(selected_slices) < 2:
+                    selected_slices = slice_indices[:2]
+
+                image = image[selected_slices]
+                mask = mask[selected_slices]
+
                 data_to_transform = {"image": image, "mask": mask}
                 transformed = self.transforms[0](data_to_transform)  # train_transforms
                 image, mask = transformed["image"], transformed["mask"]
+
+
             elif (self.transforms is not None) and not self.train_mode:
                 data_to_transform = {"image": image, "mask": mask}
                 transformed = self.transforms[1](data_to_transform)  # val_transforms
