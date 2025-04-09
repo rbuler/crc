@@ -150,21 +150,22 @@ class CRCDataset_seg(Dataset):
                 slice_indices = list(range(image.shape[0]))
                 random.shuffle(slice_indices)
                 selected_slices = []
-                found_masked = False
-                found_unmasked = False
+                masked_count = 0
+                unmasked_count = 0
             
                 for i in slice_indices:
-                    if torch.any(mask[i] > 0) and not found_masked:
+                    if torch.any(mask[i] > 0) and masked_count < 5:
                         selected_slices.append(i)
-                        found_masked = True
-                    elif not torch.any(mask[i] > 0) and not found_unmasked:
+                        masked_count += 1
+                    elif not torch.any(mask[i] > 0) and unmasked_count < 3:
                         selected_slices.append(i)
-                        found_unmasked = True
-                    if found_masked and found_unmasked:
+                        unmasked_count += 1
+                    if masked_count == 5 and unmasked_count == 3:
                         break
-                # no masked slices exist, select first two slices
-                if len(selected_slices) < 2:
-                    selected_slices = slice_indices[:2]
+                # if not enough slices are found, pad with remaining slices
+                if len(selected_slices) < 8:
+                    remaining_slices = [i for i in slice_indices if i not in selected_slices]
+                    selected_slices.extend(remaining_slices[:8 - len(selected_slices)])
 
                 image = image[selected_slices]
                 mask = mask[selected_slices]
