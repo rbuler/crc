@@ -30,12 +30,12 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         for img_patch, mask_patch, image, mask, _ in train_dataloader:
             if mode == '2d':
                 inputs = [img.unsqueeze(1).to(device, dtype=torch.float32) for img in image]   # (D, 1, H, W)
-                targets = [msk.unsqueeze(1).to(device, dtype=torch.float32) for msk in mask]   # (D, 1, H, W)
+                targets = [msk.unsqueeze(1).to(device, dtype=torch.long) for msk in mask]   # (D, 1, H, W)
                 inputs = torch.cat(inputs, dim=0)  # (sum D, 1, H, W)
                 targets = torch.cat(targets, dim=0)
 
             elif mode == '3d':
-                inputs, targets = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.float32)
+                inputs, targets = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.long)
                 inputs = inputs.permute(1, 0, 2, 3, 4)
                 targets = targets.permute(1, 0, 2, 3, 4)
         # outputs, logits = model(img_patch, return_logits=True)
@@ -140,6 +140,9 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
     print(f"Saved best model with Val Loss: {best_val_loss:.4f}, Val IoU: {best_val_metrics['IoU']:.4f}, Val Dice: {best_val_metrics['Dice']:.4f}")
     torch.save(best_model, best_model_path)
     
+    if run:
+        run["model_filename"] = best_model_path
+
     return best_model_path
 
 
@@ -172,7 +175,7 @@ def test_net(mode, model, best_model_path, test_dataloader, device, num_classes=
                 targets.to(torch.device('cpu'))
                 logits = inferer(inputs=inputs, network=model)
             
-            metrics = evaluate_segmentation(logits, targets.to(torch.device('cpu')), num_classes=num_classes, prob_thresh=probs)
+            metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
             
             total_iou += metrics["IoU"]
             total_dice += metrics["Dice"]
