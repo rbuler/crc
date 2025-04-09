@@ -309,7 +309,7 @@ for epoch in range(NUM_EPOCHS):
                 else:
                     ious = box_iou(pred_boxes, target_boxes)
                     if ious.numel() > 0 and not torch.isnan(ious).any():
-                        iou_scores.append(ious.max(dim=0).values.mean().item())
+                        iou_scores.append(ious.max(dim=1).values.mean().item())
                 del outputs, pred_boxes, target_boxes
                 torch.cuda.empty_cache()
                 gc.collect()
