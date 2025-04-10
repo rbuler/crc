@@ -61,6 +61,7 @@ if config['neptune']:
     run = neptune.init_run(project="ProjektMMG/CRC")
     run["parameters/config"] = config
     run["sys/group_tags"].add([mode])
+    run["sys/group_tags"].add(["CV-10-2d"])
 else:
     run = None
 
@@ -93,14 +94,14 @@ class LossFn:
             return TverskyLoss(alpha=self.alpha, beta=self.beta, sigmoid=True)
         elif self.loss_fn == "dicece":
             if self.weight is None:
-                return DiceCELoss(sigmoid=True)
+                return DiceCELoss(sigmoid=True, squared_pred=True)
             else:
                 pos_weight = torch.tensor([self.weight]).to(self.device) if self.device else None
-                return DiceCELoss(sigmoid=True, weight=pos_weight)
+                return DiceCELoss(sigmoid=True, squared_pred=True, weight=pos_weight)
         elif self.loss_fn == "dice":
-            return DiceLoss(sigmoid=True)
+            return DiceLoss(sigmoid=True, squared_pred=True)
         elif self.loss_fn == "dicefocal":
-            return DiceFocalLoss(sigmoid=True, gamma=self.gamma)
+            return DiceFocalLoss(sigmoid=True, squared_pred=True, gamma=self.gamma)
         elif self.loss_fn == "focal":
             return FocalLoss(gamma=self.gamma)
         else:
@@ -164,14 +165,18 @@ ids = []
 for i in range(len(dataset)):
     ids.append(int(dataset.get_patient_id(i)))
                                                                # bad res <  #enter > tx t0
-# explicit_ids_test = [31, 32, 47, 54, 78, 109, 73, 197, 204]
-explicit_ids_test = [1, 21, 57, 4, 40, 138, 17, 102, 180, 6, 199, 46, 59,  31, 32, 47, 54, 73, 78, 109, 197, 204]
+explicit_ids_test = [31, 32, 47, 54, 78, 109, 73, 197, 204]
+# explicit_ids_test = [1, 21, 57, 4, 40, 138, 17, 102, 180, 6, 199, 46, 59,  31, 32, 47, 54, 73, 78, 109, 197, 204]
 
 
 ids_train_val_test = list(set(ids) - set(explicit_ids_test))
 
 
-kf = KFold(n_splits=5, shuffle=True, random_state=seed)
+SPLITS = 10
+if run:
+    run['train/splits'] = SPLITS
+
+kf = KFold(n_splits=SPLITS, shuffle=True, random_state=seed)
 folds = list(kf.split(ids_train_val_test))
 
 for fold_idx, (train_idx, val_idx) in enumerate(folds):
@@ -208,24 +213,20 @@ test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_work
 
 # %%
 if mode == '2d':
-    # model = UNet(spatial_dims=2,
-    #              in_channels=1,
-    #              out_channels=1,
-    #              channels=(12, 24, 48, 96, 192),
-    #              strides=(2, 2, 2, 2),
-    #     )
-    
-    model = UNETR(
-                in_channels=1,
-                out_channels=1,
-                img_size=(384, 384),
-                feature_size=16,
-                hidden_size=768,
-                mlp_dim=3072,
-                num_heads=12,
-                dropout_rate=0.1,
-                spatial_dims=2
-            )
+    model = UNet(
+        spatial_dims=2,
+        in_channels=1,
+        out_channels=1,
+        channels=[32, 64, 128, 256, 512],
+        strides=[2, 2, 2, 2],
+        kernel_size=3,
+        up_kernel_size=3,
+        num_res_units=2,
+        act=("PReLU", {}),
+        norm=("instance", {"affine": False}),
+        dropout=0.1,
+        bias=True,
+    )
 
 if mode == '3d':
     model = UNETR_PP(in_channels=1, out_channels=14,
