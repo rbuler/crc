@@ -192,8 +192,10 @@ def test_net(mode, model, best_model_path, test_dataloader, device, num_classes=
                 targets = targets.permute(1, 0, 2, 3)
                 logits = model(inputs)
             elif mode =='3d':
-                targets.to(torch.device('cpu'))
+                inputs = inputs.unsqueeze(0)
+                targets = targets.to(torch.device('cpu'))
                 logits = inferer(inputs=inputs, network=model)
+                logits = logits.squeeze(0)
             
             metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
             
