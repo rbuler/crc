@@ -18,7 +18,8 @@ import monai.transforms as mt
 from monai.losses import TverskyLoss, FocalLoss, DiceCELoss, DiceFocalLoss, DiceLoss
 from monai.inferers import SlidingWindowInferer
 from unetr_pp.network_architecture.synapse.unetr_pp_synapse import UNETR_PP
-from monai.networks.nets import UNet
+from monai.networks.nets import FlexibleUNet
+from monai.networks.nets import UNet, UNETR
 from dataset_seg import CRCDataset_seg
 from net_utils import train_net, test_net
 
@@ -30,6 +31,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 # MAKE PARSER AND LOAD PARAMS FROM CONFIG FILE--------------------------------
 parser = utils.get_args_parser('config.yml')
+parser.add_argument("--fold", type=int, default=None)
 args, unknown = parser.parse_known_args()
 with open(args.config_path) as file:
     config = yaml.load(file, Loader=yaml.FullLoader)
@@ -53,7 +55,7 @@ if pos_weight == 'None':
     pos_weight = None
 loss_fn = config['training']['loss_fn']
 mode = config['training']['mode']
-fold = config['fold']
+
 
 if config['neptune']:
     run = neptune.init_run(project="ProjektMMG/CRC")
@@ -69,6 +71,11 @@ torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 random.seed(seed)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+if run:
+    fold = args.fold if args.fold else config['fold']
+    run['train/current_fold'] = fold
 # %%
 class LossFn:
     def __init__(self, loss_fn, alpha=0.25, beta=0.75, weight=None, gamma=2.0, device=None):
@@ -126,6 +133,7 @@ train_transforms = mt.Compose([
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=0),
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=1),
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=2) if mode == '3d' else mt.Lambda(lambda x: x),
+    mt.Rand2DElasticd(keys=["image", "mask"], spacing=(10, 10), magnitude_range=(1, 2), prob=0.25, mode=["bilinear", "nearest"]) if mode == '2d' else mt.Lambda(lambda x: x),
     mt.RandGaussianNoised(keys=['image'], prob=0.25, mean=0.0, std=0.01),
     mt.RandShiftIntensityd(keys=['image'], offsets=0.05, prob=0.25),
     mt.RandStdShiftIntensityd(keys=['image'], factors=0.05, prob=0.25),
@@ -156,8 +164,13 @@ ids = []
 for i in range(len(dataset)):
     ids.append(int(dataset.get_patient_id(i)))
                                                                # bad res <  #enter > tx t0
-explicit_ids_test = [31, 32, 47, 54, 78, 109, 73, 197, 204]
+# explicit_ids_test = [31, 32, 47, 54, 78, 109, 73, 197, 204]
+explicit_ids_test = [1, 21, 57, 4, 40, 138, 17, 102, 180, 6, 199, 46, 59,  31, 32, 47, 54, 73, 78, 109, 197, 204]
+
+
 ids_train_val_test = list(set(ids) - set(explicit_ids_test))
+
+
 kf = KFold(n_splits=5, shuffle=True, random_state=seed)
 folds = list(kf.split(ids_train_val_test))
 
@@ -195,12 +208,24 @@ test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_work
 
 # %%
 if mode == '2d':
-    model = UNet(spatial_dims=2,
-                 in_channels=1,
-                 out_channels=1,
-                 channels=(4, 8, 16, 32, 64),
-                 strides=(2, 2, 2, 2),
-        )
+    # model = UNet(spatial_dims=2,
+    #              in_channels=1,
+    #              out_channels=1,
+    #              channels=(12, 24, 48, 96, 192),
+    #              strides=(2, 2, 2, 2),
+    #     )
+    
+    model = UNETR(
+                in_channels=1,
+                out_channels=1,
+                img_size=(384, 384),
+                feature_size=16,
+                hidden_size=768,
+                mlp_dim=3072,
+                num_heads=12,
+                dropout_rate=0.1,
+                spatial_dims=2
+            )
 
 if mode == '3d':
     model = UNETR_PP(in_channels=1, out_channels=14,
