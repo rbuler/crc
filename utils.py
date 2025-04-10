@@ -358,10 +358,10 @@ def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5
         valid_pred_labels = torch.cat(valid_pred_labels, dim=0)
         valid_true_masks = torch.cat(valid_true_masks, dim=0)
 
-        if valid_pred_labels.dim() == 4:  # 3D case
+        if valid_pred_labels.dim() == 5:  # 3D case B C H W D
             dice_metric(y_pred=valid_pred_labels, y=valid_true_masks)
             mean_iou_metric(y_pred=valid_pred_labels, y=valid_true_masks)
-        elif valid_pred_labels.dim() == 3:  # 2D case
+        elif valid_pred_labels.dim() == 4:  # 2D case B C H W or slidng window inferer
             dice_metric(y_pred=valid_pred_labels.unsqueeze(1), y=valid_true_masks.unsqueeze(1))
             mean_iou_metric(y_pred=valid_pred_labels.unsqueeze(1), y=valid_true_masks.unsqueeze(1))
 

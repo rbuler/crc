@@ -76,17 +76,16 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         num_val_batches = len(val_dataloader)
     
         with torch.no_grad():
-            for _, _, image, mask, id in val_dataloader:
-                inputs = image.to(device, dtype=torch.float32)
-                targets = mask.to(device, dtype=torch.long)
-
+            for img_patch, mask_patch, image, mask, id in val_dataloader:
                 if mode == '2d':
+                    inputs = image.to(device, dtype=torch.float32)
+                    targets = mask.to(device, dtype=torch.long)
                     inputs = inputs.permute(1, 0, 2, 3)
                     targets = targets.permute(1, 0, 2, 3)
                     logits = model(inputs)
                 elif mode == '3d':
-                    inputs = inputs.unsqueeze(0)
-                    targets = targets.unsqueeze(0)
+                    inputs = img_patch.to(device, dtype=torch.float32)
+                    targets = mask_patch.to(device, dtype=torch.long)
                     targets = targets.to(torch.device('cpu'))
                     logits = inferer(inputs=inputs, network=model)
 
@@ -106,9 +105,9 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                     "Dice": metrics["Dice"],
                     "TPR": metrics["TPR"],
                     "Precision": metrics["Precision"]}
-            if 'patient_metrics_list' not in locals():
-                patient_metrics_list = []
-            patient_metrics_list.append(patient_metrics)
+                if 'patient_metrics_list' not in locals():
+                    patient_metrics_list = []
+                patient_metrics_list.append(patient_metrics)
 
         avg_val_loss = val_loss / num_val_batches
         avg_val_iou = val_iou / num_val_batches
@@ -136,9 +135,6 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
 
         if early_stopping_counter >= patience:
             print(f"Early stopping triggered after {epoch+1} epochs.")
-            print("\nPatient-wise metrics:")
-            for metrics in patient_metrics_list:
-                print(metrics)
             break
 
         end_time = time.time()
@@ -153,6 +149,17 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
     print(f"Saved best model with Val Loss: {best_val_loss:.4f}, Val IoU: {best_val_metrics['IoU']:.4f}, Val Dice: {best_val_metrics['Dice']:.4f}")
     torch.save(best_model, best_model_path)
     
+    print("\nPatient-wise metrics:")
+    for metrics in patient_metrics_list:
+        print(
+            f"Patient_ID: {str(metrics['Patient_ID'][0]):<5} | "
+            f"IoU: {metrics['IoU']:.3f} | "
+            f"Dice: {metrics['Dice']:.3f} | "
+            f"TPR: {metrics['TPR']:.3f} | "
+            f"Precision: {metrics['Precision']:.3f}"
+        )
+
+
     if run:
         run["model_filename"] = best_model_path
 
@@ -183,8 +190,6 @@ def test_net(mode, model, best_model_path, test_dataloader, device, num_classes=
                 targets = targets.permute(1, 0, 2, 3)
                 logits = model(inputs)
             elif mode =='3d':
-                inputs = inputs.unsqueeze(0)
-                targets = targets.unsqueeze(0)
                 targets.to(torch.device('cpu'))
                 logits = inferer(inputs=inputs, network=model)
             
