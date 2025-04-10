@@ -76,7 +76,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         num_val_batches = len(val_dataloader)
     
         with torch.no_grad():
-            for _, _, image, mask, _ in val_dataloader:
+            for _, _, image, mask, id in val_dataloader:
                 inputs = image.to(device, dtype=torch.float32)
                 targets = mask.to(device, dtype=torch.long)
 
@@ -99,6 +99,16 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                 val_dice += metrics["Dice"]
                 val_tpr += metrics["TPR"]
                 val_precision += metrics["Precision"]
+
+                patient_metrics = {
+                    "Patient_ID": id,
+                    "IoU": metrics["IoU"],
+                    "Dice": metrics["Dice"],
+                    "TPR": metrics["TPR"],
+                    "Precision": metrics["Precision"]}
+            if 'patient_metrics_list' not in locals():
+                patient_metrics_list = []
+            patient_metrics_list.append(patient_metrics)
 
         avg_val_loss = val_loss / num_val_batches
         avg_val_iou = val_iou / num_val_batches
@@ -126,6 +136,9 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
 
         if early_stopping_counter >= patience:
             print(f"Early stopping triggered after {epoch+1} epochs.")
+            print("\nPatient-wise metrics:")
+            for metrics in patient_metrics_list:
+                print(metrics)
             break
 
         end_time = time.time()
