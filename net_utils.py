@@ -84,10 +84,12 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                     targets = targets.permute(1, 0, 2, 3)
                     logits = model(inputs)
                 elif mode == '3d':
-                    inputs = img_patch.to(device, dtype=torch.float32)
-                    targets = mask_patch.to(device, dtype=torch.long)
+                    inputs = image.to(device, dtype=torch.float32)
+                    targets = mask.to(device, dtype=torch.long)
                     targets = targets.to(torch.device('cpu'))
+                    inputs = inputs.unsqueeze(0)
                     logits = inferer(inputs=inputs, network=model)
+                    logits = logits.squeeze(0)
 
 
                 metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=0.5)
