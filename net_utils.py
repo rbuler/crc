@@ -27,6 +27,8 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         total_tpr = 0
         total_precision = 0
         num_batches = len(train_dataloader)
+        patient_metrics = {}
+
         for img_patch, mask_patch, image, mask, _ in train_dataloader:
             if mode == '2d':
                 inputs = [img.unsqueeze(1).to(device, dtype=torch.float32) for img in image]   # (D, 1, H, W)
@@ -101,16 +103,6 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                 val_tpr += metrics["TPR"]
                 val_precision += metrics["Precision"]
 
-                patient_metrics = {
-                    "Patient_ID": id,
-                    "IoU": metrics["IoU"],
-                    "Dice": metrics["Dice"],
-                    "TPR": metrics["TPR"],
-                    "Precision": metrics["Precision"]}
-                if 'patient_metrics_list' not in locals():
-                    patient_metrics_list = []
-                patient_metrics_list.append(patient_metrics)
-
         avg_val_loss = val_loss / num_val_batches
         avg_val_iou = val_iou / num_val_batches
         avg_val_dice = val_dice / num_val_batches
@@ -129,6 +121,14 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
             best_val_metrics = {"IoU": avg_val_iou, "Dice": avg_val_dice}
             best_model = model.state_dict()
             early_stopping_counter = 0
+            
+            patient_metrics = {
+                    "Patient_ID": id,
+                    "IoU": metrics["IoU"],
+                    "Dice": metrics["Dice"],
+                    "TPR": metrics["TPR"],
+                    "Precision": metrics["Precision"]}
+
         else:
             early_stopping_counter += 1
     
@@ -152,14 +152,13 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
     torch.save(best_model, best_model_path)
     
     print("\nPatient-wise metrics:")
-    for metrics in patient_metrics_list:
-        print(
-            f"Patient_ID: {str(metrics['Patient_ID'][0]):<5} | "
-            f"IoU: {metrics['IoU']:.3f} | "
-            f"Dice: {metrics['Dice']:.3f} | "
-            f"TPR: {metrics['TPR']:.3f} | "
-            f"Precision: {metrics['Precision']:.3f}"
-        )
+    print(
+        f"Patient_ID: {str(patient_metrics['Patient_ID'][0]):<5} | "
+        f"IoU: {patient_metrics['IoU']:.3f} | "
+        f"Dice: {patient_metrics['Dice']:.3f} | "
+        f"TPR: {patient_metrics['TPR']:.3f} | "
+        f"Precision: {patient_metrics['Precision']:.3f}"
+    )
 
 
     if run:
