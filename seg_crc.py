@@ -61,7 +61,7 @@ if config['neptune']:
     run = neptune.init_run(project="ProjektMMG/CRC")
     run["parameters/config"] = config
     run["sys/group_tags"].add([mode])
-    run["sys/group_tags"].add(["CV-10-2d"])
+    run["sys/group_tags"].add(["CV-10-3d"])
 else:
     run = None
 
@@ -90,6 +90,8 @@ class LossFn:
     def get_loss(self):
         if self.loss_fn == "hybrid":
             return self.HybridLoss(alpha=self.alpha, beta=self.beta, gamma=self.gamma)
+        elif self.loss_fn == "combo":
+            return self.ComboLoss()
         elif self.loss_fn == "tversky":
             return TverskyLoss(alpha=self.alpha, beta=self.beta, sigmoid=True)
         elif self.loss_fn == "dicece":
@@ -108,15 +110,30 @@ class LossFn:
             raise ValueError(f"Unsupported loss function: {self.loss_fn}")
 
     class HybridLoss(torch.nn.Module):
-        def __init__(self, alpha, beta, gamma):
+        def __init__(self, alpha, beta, weights=(0.7, 0.3), gamma=2):
             super().__init__()
             self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
             self.focal_loss = FocalLoss(gamma=gamma)
+            self.weights = weights
 
         def forward(self, logits, targets):
             tversky_loss = self.tversky_loss(logits, targets)
             focal_loss = self.focal_loss(logits, targets)
-            return tversky_loss + focal_loss
+            return (self.weights[0] * tversky_loss + self.weights[1] * focal_loss)
+
+
+    class ComboLoss(torch.nn.Module):
+        def __init__(self, weights=(0.7, 0.3), gamma=2):
+            super().__init__()
+            self.dicece = DiceCELoss(sigmoid=True, squared_pred=True)
+            self.focal = FocalLoss(gamma=gamma)
+            self.weights = weights
+
+        def forward(self, logits, targets):
+            dicece_loss = self.dicece(logits, targets)
+            focal_loss = self.focal(logits, targets)
+            return (self.weights[0] * dicece_loss + self.weights[1] * focal_loss)
+
 
 
 def get_optimizer(optimizer_name, model_params, lr, weight_decay):
