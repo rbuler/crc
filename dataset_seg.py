@@ -125,7 +125,7 @@ class CRCDataset_seg(Dataset):
         if self.mode == '3d':
 
             patches = self.extract_patches(image, mask)
-            num_to_select = min(8, len(patches))
+            num_to_select = min(32, len(patches))
 
             selected_patches = random.sample(patches, num_to_select)
             img_patch = torch.stack([p[0] for p in selected_patches])
@@ -154,18 +154,18 @@ class CRCDataset_seg(Dataset):
                 unmasked_count = 0
             
                 for i in slice_indices:
-                    if torch.any(mask[i] > 0) and masked_count < 5:
+                    if torch.any(mask[i] > 0) and masked_count < 24:
                         selected_slices.append(i)
                         masked_count += 1
-                    elif not torch.any(mask[i] > 0) and unmasked_count < 3:
+                    elif not torch.any(mask[i] > 0) and unmasked_count < 12:
                         selected_slices.append(i)
                         unmasked_count += 1
-                    if masked_count == 5 and unmasked_count == 3:
+                    if masked_count == 24 and unmasked_count == 12:
                         break
                 # if not enough slices are found, pad with remaining slices
-                if len(selected_slices) < 8:
+                if len(selected_slices) < 36:
                     remaining_slices = [i for i in slice_indices if i not in selected_slices]
-                    selected_slices.extend(remaining_slices[:8 - len(selected_slices)])
+                    selected_slices.extend(remaining_slices[:36 - len(selected_slices)])
 
                 image = image[selected_slices]
                 mask = mask[selected_slices]
