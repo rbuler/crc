@@ -119,6 +119,10 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             best_val_metrics = {"IoU": avg_val_iou, "Dice": avg_val_dice}
+            if run:
+                run["val/best_val_metrics/IoU"] = best_val_metrics['IoU']
+                run["val/best_val_metrics/Dice"] = best_val_metrics['Dice']
+
             best_model = model.state_dict()
             early_stopping_counter = 0
             
