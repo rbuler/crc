@@ -15,7 +15,6 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
     early_stopping_counter = 0
 
 
-
     for epoch in range(num_epochs):
         start_time = time.time()
     
@@ -27,7 +26,6 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         total_tpr = 0
         total_precision = 0
         num_batches = len(train_dataloader)
-        patient_metrics = {}
 
         for img_patch, mask_patch, image, mask, _ in train_dataloader:
             if mode == '2d':
@@ -54,7 +52,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
             total_precision += metrics["Precision"]
             loss.backward()
             optimizer.step()
-    
+
         avg_loss = total_loss / num_batches
         avg_iou = total_iou / num_batches
         avg_dice = total_dice / num_batches
@@ -77,6 +75,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         val_precision = 0
         num_val_batches = len(val_dataloader)
     
+        current_patient_metrics = {}
         with torch.no_grad():
             for img_patch, mask_patch, image, mask, id in val_dataloader:
                 if mode == '2d':
@@ -90,9 +89,9 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                     targets = mask.to(device, dtype=torch.long)
                     targets = targets.to(torch.device('cpu'))
                     inputs = inputs.unsqueeze(0)
+                    targets = targets.unsqueeze(0)
                     logits = inferer(inputs=inputs, network=model)
-                    logits = logits.squeeze(0)
-
+                    # logits = logits.squeeze(0)
 
                 metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=0.5)
                 criterion = criterion.to(device=logits.device)
@@ -102,6 +101,14 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                 val_dice += metrics["Dice"]
                 val_tpr += metrics["TPR"]
                 val_precision += metrics["Precision"]
+
+                current_patient_metrics[str(id[0])] = {
+                    "Loss": loss.item(),
+                    "IoU": metrics["IoU"],
+                    "Dice": metrics["Dice"],
+                    "TPR": metrics["TPR"],
+                    "Precision": metrics["Precision"]
+                }
 
         avg_val_loss = val_loss / num_val_batches
         avg_val_iou = val_iou / num_val_batches
@@ -119,20 +126,14 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             best_val_metrics = {"IoU": avg_val_iou, "Dice": avg_val_dice}
+            best_patient_metrics = current_patient_metrics.copy()
+
             if run:
                 run["val/best_val_metrics/IoU"] = best_val_metrics['IoU']
                 run["val/best_val_metrics/Dice"] = best_val_metrics['Dice']
 
             best_model = model.state_dict()
             early_stopping_counter = 0
-            
-            patient_metrics = {
-                    "Patient_ID": id,
-                    "IoU": metrics["IoU"],
-                    "Dice": metrics["Dice"],
-                    "TPR": metrics["TPR"],
-                    "Precision": metrics["Precision"]}
-
         else:
             early_stopping_counter += 1
     
@@ -155,14 +156,16 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
     print(f"Saved best model with Val Loss: {best_val_loss:.4f}, Val IoU: {best_val_metrics['IoU']:.4f}, Val Dice: {best_val_metrics['Dice']:.4f}")
     torch.save(best_model, best_model_path)
     
-    print("\nPatient-wise metrics:")
-    print(
-        f"Patient_ID: {str(patient_metrics['Patient_ID'][0]):<5} | "
-        f"IoU: {patient_metrics['IoU']:.3f} | "
-        f"Dice: {patient_metrics['Dice']:.3f} | "
-        f"TPR: {patient_metrics['TPR']:.3f} | "
-        f"Precision: {patient_metrics['Precision']:.3f}"
-    )
+    print("\nBest Patient-wise Metrics (when Val Loss was lowest):")
+    for patient_id, metrics in best_patient_metrics.items():
+        print(
+            f"Patient_ID: {patient_id:<10} | "
+            f"Loss: {metrics['Loss']:.4f} | "
+            f"IoU: {metrics['IoU']:.3f} | "
+            f"Dice: {metrics['Dice']:.3f} | "
+            f"TPR: {metrics['TPR']:.3f} | "
+            f"Precision: {metrics['Precision']:.3f}"
+        )
 
 
     if run:
