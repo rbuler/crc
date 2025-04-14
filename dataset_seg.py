@@ -125,7 +125,7 @@ class CRCDataset_seg(Dataset):
         if self.mode == '3d':
 
             patches = self.extract_patches(image, mask)
-            num_to_select = min(32, len(patches))
+            num_to_select = min(4, len(patches))
 
             selected_patches = random.sample(patches, num_to_select)
             img_patch = torch.stack([p[0] for p in selected_patches])
@@ -136,12 +136,12 @@ class CRCDataset_seg(Dataset):
                 data_to_transform = {"image": img_patch, "mask": mask_patch}
                 transformed_patches = self.transforms[0](data_to_transform)  # train_transforms
                 img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
+                return img_patch, mask_patch, torch.zeros(1), torch.zeros(1), self.get_patient_id(idx).strip("'")
             elif (self.transforms is not None) and not self.train_mode:
                 data_to_transform = {"image": img_patch, "mask": mask_patch}
                 transformed_patches = self.transforms[1](data_to_transform)  # val_transforms
                 img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
-
-            return img_patch, mask_patch, image, mask, self.get_patient_id(idx).strip("'")
+                return img_patch, mask_patch, image, mask, self.get_patient_id(idx).strip("'")
         
         elif self.mode == '2d':
 
@@ -212,9 +212,14 @@ class CRCDataset_seg(Dataset):
         H, W, D = image.shape
         h_size, w_size, d_size = self.patch_size
 
-        h_idxs = list(range(0, H - h_size + 1, self.stride))
-        w_idxs = list(range(0, W - w_size + 1, self.stride))
-        d_idxs = list(range(0, D - d_size + 1, self.stride))
+        overlap = 0.75
+        h_stride = int(h_size * (1 - overlap))
+        w_stride = int(w_size * (1 - overlap))
+        d_stride = int(d_size * (1 - overlap))
+
+        h_idxs = list(range(0, H - h_size + 1, h_stride))
+        w_idxs = list(range(0, W - w_size + 1, w_stride))
+        d_idxs = list(range(0, D - d_size + 1, d_stride))
 
         if h_idxs[-1] != H - h_size:
             h_idxs.append(H - h_size)
@@ -230,12 +235,11 @@ class CRCDataset_seg(Dataset):
                 for d in d_idxs:
                     img_patch = image[h:h+h_size, w:w+w_size, d:d+d_size]
                     mask_patch = mask[h:h+h_size, w:w+w_size, d:d+d_size]
-                    if torch.mean((img_patch < 0.001).float()) < 0.3 or torch.any(mask_patch > 0):
+                    if torch.mean((img_patch < 0.001).float()) < 0.2 or torch.any(mask_patch > 0):
                         patch_candidates.append((img_patch, mask_patch))
 
         foreground_patches = [p for p in patch_candidates if torch.any(p[1] > 0)]
         background_patches = [p for p in patch_candidates if not torch.any(p[1] > 0)]
-        
         min_samples = min(len(foreground_patches), len(background_patches))
         num_samples = min(min_samples, self.num_patches_per_sample // 2)
 
