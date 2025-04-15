@@ -36,13 +36,8 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                 targets = torch.cat(targets, dim=0)
             elif mode == '3d':
                 inputs, targets = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.long)
-                if inputs.shape[1] == 1 and len(inputs.shape) == 5:
-                    inputs = inputs.permute(1, 0, 2, 3, 4)
-                    targets = targets.permute(1, 0, 2, 3, 4)
-                elif inputs.shape[1] != 1 and len(inputs.shape) == 5:
-                    inputs = inputs.reshape(inputs.shape[0] * inputs.shape[1], *inputs.shape[2:]).unsqueeze(1)
-                    targets = targets.reshape(targets.shape[0] * targets.shape[1], *targets.shape[2:]).unsqueeze(1)
-
+                inputs = inputs.reshape(inputs.shape[0] * inputs.shape[1], *inputs.shape[2:]).unsqueeze(1)
+                targets = targets.reshape(targets.shape[0] * targets.shape[1], *targets.shape[2:]).unsqueeze(1)
             optimizer.zero_grad()
             logits = model(inputs)
             criterion = criterion.to(device=logits.device)
