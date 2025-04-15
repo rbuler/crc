@@ -36,7 +36,7 @@ class CRCDataset_seg(Dataset):
         
         self.cut_images_path = []
         self.cut_filtered_image_path = []
-        # self.cut_filtered_bodyMask = []
+        self.cut_filtered_bodyMask = []
         self.cut_mask_path = []
         self.transforms = transforms
         self.train_mode = False
@@ -61,7 +61,7 @@ class CRCDataset_seg(Dataset):
                 elif '_body.nii.gz' in f:
                     self.cut_filtered_image_path.append(f)
                 elif 'cut_filterMask.nii.gz' in f:
-                    continue
+                    self.cut_filtered_bodyMask.append(f)
                 elif 'instance_mask.nii.gz' in f:
                     self.instance_masks_path.append(f)
                 elif 'nii.gz' in f:
@@ -80,30 +80,26 @@ class CRCDataset_seg(Dataset):
         else:
             if filtered:
                 image_path = self.cut_filtered_image_path[idx]
+                body_mask_path = self.cut_filtered_bodyMask[idx]
             else:
                 image_path = self.cut_images_path[idx]
             mask_path = self.cut_mask_path[idx]
-
-        instance_mask_path = self.instance_masks_path[idx]
 
         image = np.asarray(nib.load(image_path).dataobj)
         image = torch.from_numpy(image)
         mask = np.asarray(nib.load(mask_path).dataobj)
         mask = torch.from_numpy(mask)
+        body_mask = np.asarray(nib.load(body_mask_path).dataobj)
+        body_mask = torch.from_numpy(body_mask)
 
-        mask = np.asarray(nib.load(mask_path).dataobj)
-        mask = torch.from_numpy(mask)
+        id = self.get_patient_id(idx).strip("'")
 
-        instance_mask = np.asarray(nib.load(instance_mask_path).dataobj)
-        instance_mask = torch.from_numpy(instance_mask)
 
         if len(image.shape) == 4:
             image = image[:, :, 0, :]
         if len(mask.shape) == 4:
             mask = mask[:, :, 0, :]
-        if len(instance_mask.shape) == 4:
-            instance_mask = instance_mask[:, :, 0, :]
-        # instance_mask = instance_mask.permute(1, 0, 2) # need to permute to get correct bounding boxes
+
         window_center = 45
         window_width = 400
         image = self.window_and_normalize_ct(image,
@@ -121,6 +117,7 @@ class CRCDataset_seg(Dataset):
         # temporary cuz model requires patch of shape (64 128 128)
         image = image.permute(2, 0, 1)   # D, H, W
         mask = mask.permute(2, 0, 1)
+        body_mask = body_mask.permute(2, 0, 1)
 
         if self.mode == '3d':
 
@@ -136,12 +133,13 @@ class CRCDataset_seg(Dataset):
                 data_to_transform = {"image": img_patch, "mask": mask_patch}
                 transformed_patches = self.transforms[0](data_to_transform)  # train_transforms
                 img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
-                return img_patch, mask_patch, torch.zeros(1), torch.zeros(1), self.get_patient_id(idx).strip("'")
+                return img_patch, mask_patch, torch.zeros(1), torch.zeros(1), id
             elif (self.transforms is not None) and not self.train_mode:
                 data_to_transform = {"image": img_patch, "mask": mask_patch}
                 transformed_patches = self.transforms[1](data_to_transform)  # val_transforms
                 img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
-                return img_patch, mask_patch, image, mask, self.get_patient_id(idx).strip("'")
+                mask = {"mask": mask, "body_mask": body_mask}
+                return img_patch, mask_patch, image, mask, id
         
         elif self.mode == '2d':
 
@@ -174,13 +172,12 @@ class CRCDataset_seg(Dataset):
                 transformed = self.transforms[0](data_to_transform)  # train_transforms
                 image, mask = transformed["image"], transformed["mask"]
 
-
             elif (self.transforms is not None) and not self.train_mode:
                 data_to_transform = {"image": image, "mask": mask}
                 transformed = self.transforms[1](data_to_transform)  # val_transforms
                 image, mask = transformed["image"], transformed["mask"]
 
-            return torch.zeros(1), torch.zeros(1), image, mask, self.get_patient_id(idx).strip("'")
+            return torch.zeros(1), torch.zeros(1), image, mask, id
 
 
 
@@ -212,7 +209,7 @@ class CRCDataset_seg(Dataset):
         H, W, D = image.shape
         h_size, w_size, d_size = self.patch_size
 
-        overlap = 0.75
+        overlap = 0.5
         h_stride = int(h_size * (1 - overlap))
         w_stride = int(w_size * (1 - overlap))
         d_stride = int(d_size * (1 - overlap))
