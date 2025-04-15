@@ -1,5 +1,6 @@
 from utils import evaluate_segmentation
 import os
+import copy
 import time
 import uuid
 import torch
@@ -11,7 +12,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
     best_val_loss = float('inf')
     best_val_metrics = {"IoU": 0, "Dice": 0}
 
-    best_model_path = os.path.join(root, "models", f"best_model_{uuid.uuid4()}.pth")  # noqa: F821
+    best_model_path = os.path.join(root, "models", f"best_model_{uuid.uuid4()}.pth")
     early_stopping_counter = 0
 
 
@@ -33,7 +34,6 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                 targets = [msk.unsqueeze(1).to(device, dtype=torch.long) for msk in mask]   # (D, 1, H, W)
                 inputs = torch.cat(inputs, dim=0)  # (sum D, 1, H, W)
                 targets = torch.cat(targets, dim=0)
-
             elif mode == '3d':
                 inputs, targets = img_patch.to(device, dtype=torch.float32), mask_patch.to(device, dtype=torch.long)
                 if inputs.shape[1] == 1 and len(inputs.shape) == 5:
@@ -42,7 +42,6 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                 elif inputs.shape[1] != 1 and len(inputs.shape) == 5:
                     inputs = inputs.reshape(inputs.shape[0] * inputs.shape[1], *inputs.shape[2:]).unsqueeze(1)
                     targets = targets.reshape(targets.shape[0] * targets.shape[1], *targets.shape[2:]).unsqueeze(1)
-        # outputs, logits = model(img_patch, return_logits=True)
 
             optimizer.zero_grad()
             logits = model(inputs)
@@ -95,7 +94,6 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                     inputs = inputs.unsqueeze(0)
                     targets = targets.unsqueeze(0)
                     logits = inferer(inputs=inputs, network=model)
-                    # logits = logits.squeeze(0)
 
                 metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=0.5)
                 criterion = criterion.to(device=logits.device)
@@ -136,7 +134,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                 run["val/best_val_metrics/IoU"] = best_val_metrics['IoU']
                 run["val/best_val_metrics/Dice"] = best_val_metrics['Dice']
 
-            best_model = model.state_dict()
+            best_model = copy.deepcopy(model.state_dict())
             early_stopping_counter = 0
         else:
             early_stopping_counter += 1
@@ -203,9 +201,9 @@ def test_net(mode, model, best_model_path, test_dataloader, device, num_classes=
                 logits = model(inputs)
             elif mode =='3d':
                 inputs = inputs.unsqueeze(0)
+                targets = targets.unsqueeze(0)
                 targets = targets.to(torch.device('cpu'))
                 logits = inferer(inputs=inputs, network=model)
-                logits = logits.squeeze(0)
             
             metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
             
