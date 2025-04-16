@@ -30,11 +30,12 @@ torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 set_determinism(seed=seed)
 
-nii_pth = "/media/dysk_a/jr_buler/RJG-gumed/RJG_13-02-25_nii_labels"
-# nii_pth = "/users/project1/pt01191/CRC/Data/RJG_13-02-25_nii_labels"
+# nii_pth = "/media/dysk_a/jr_buler/RJG-gumed/RJG_13-02-25_nii_labels"
+nii_pth = "/users/project1/pt01191/CRC/Data/RJG_13-02-25_nii_labels"
 image_paths = []
 mask_paths = []
 cut_image_paths = []
+cut_filter_mask_paths = []
 pattern = re.compile(r'^\d+a$') # take only those ##a
 
 for root, dirs, files in os.walk(nii_pth, topdown=False):
@@ -51,6 +52,8 @@ for root, dirs, files in os.walk(nii_pth, topdown=False):
             cut_image_paths.append(f)
         elif '_body.nii.gz' in f:
             continue
+        elif 'cut_filterMask.nii.gz' in f:
+            continue
         elif 'instance_mask.nii.gz' in f:
             continue
         elif 'nii.gz' in f:
@@ -59,7 +62,6 @@ for root, dirs, files in os.walk(nii_pth, topdown=False):
             continue
 # %%
 # z = 0
-from scipy.ndimage import label
 
 for iter in range(len(image_paths)):
     image = nib.load(cut_image_paths[iter]).get_fdata()
@@ -84,11 +86,12 @@ for iter in range(len(image_paths)):
     # set body_mask zero values to -4096.0
     new_image = image.copy()
     new_image[body_mask == 0] = -1024.0
-
+    body_mask = body_mask.astype(np.uint8)
     # save image to file
-    new_image_nii = nib.Nifti1Image(new_image, np.eye(4))
-    print(cut_image_paths[iter].replace('.nii.gz', '_body.nii.gz'))
-    nib.save(new_image_nii, cut_image_paths[iter].replace('.nii.gz', '_body.nii.gz'))
+    new_image_nii = nib.Nifti1Image(body_mask, np.eye(4))
+    # print(cut_image_paths[iter].replace('.nii.gz', '_body.nii.gz'))
+    print(cut_image_paths[iter].replace('.nii.gz', '_filterMask.nii.gz'))
+    nib.save(new_image_nii, cut_image_paths[iter].replace('.nii.gz', '_filterMask.nii.gz'))
 
 
     # Loop over each slice and create air mask inside the body mask
