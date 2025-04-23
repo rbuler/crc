@@ -189,19 +189,23 @@ def test_net(mode, model, best_model_path, test_dataloader, device, num_classes=
     with torch.no_grad():
         test_dataloader.dataset.dataset.set_mode(train_mode=False)
         for i, (_, _, image, mask, _) in enumerate(test_dataloader):
-            inputs = image.to(device, dtype=torch.float32)
-            targets = mask.to(device, dtype=torch.long)
-
             if mode ==  '2d':
+                inputs = image.to(device, dtype=torch.float32)
+                targets = mask.to(device, dtype=torch.long)
                 inputs = inputs.permute(1, 0, 2, 3)
                 targets = targets.permute(1, 0, 2, 3)
                 logits = model(inputs)
             elif mode =='3d':
+                inputs = image.to(device, dtype=torch.float32)
+                targets = mask['mask'].to(device, dtype=torch.long)
+                body_mask = mask["body_mask"].to(torch.device('cpu'), dtype=torch.long)
                 inputs = inputs.unsqueeze(0)
                 targets = targets.unsqueeze(0)
+                body_mask = body_mask.unsqueeze(0)
                 targets = targets.to(torch.device('cpu'))
                 logits = inferer(inputs=inputs, network=model)
-            
+                logits[body_mask == 0] = -1e10
+
             metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
             
             total_iou += metrics["IoU"]
