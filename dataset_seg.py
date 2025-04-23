@@ -122,7 +122,7 @@ class CRCDataset_seg(Dataset):
         if self.mode == '3d':
 
             patches = self.extract_patches(image, mask)
-            num_to_select = min(4, len(patches))
+            num_to_select = min(36, len(patches))
 
             selected_patches = random.sample(patches, num_to_select)
             img_patch = torch.stack([p[0] for p in selected_patches])
@@ -209,7 +209,7 @@ class CRCDataset_seg(Dataset):
         H, W, D = image.shape
         h_size, w_size, d_size = self.patch_size
 
-        overlap = 0.5
+        overlap = 0.75
         h_stride = int(h_size * (1 - overlap))
         w_stride = int(w_size * (1 - overlap))
         d_stride = int(d_size * (1 - overlap))
