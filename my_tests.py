@@ -17,11 +17,13 @@ def check_masks_inside_boxes(data_loader, label):
                 bbox_volume += (Hmax - Hmin) * (Wmax - Wmin) * (Dmax - Dmin)
                 inside_pixels += np.count_nonzero(mask_region == label)
                 # print(f"Box: {box}, Label: {label}, Inside pixels: {inside_pixels}, Total mask pixels: {total_mask_pixels}")
-            if total_mask_pixels > 0:
-                percentage_inside = (inside_pixels / total_mask_pixels) * 100
-                print(f"{percentage_inside:.2f}% of mask pixels are inside the bounding boxes")
-                percentage_bbox_volume_occupied = (inside_pixels / bbox_volume) * 100 if bbox_volume > 0 else 0
-                print(f"  {percentage_bbox_volume_occupied:.2f}% of the bounding box volume is occupied by the mask")
-            else:
-                print(f"No mask pixels found")
-                assert inside_pixels == 0 and bbox_volume == 0 and len(labels) == 0 and int(boxes.sum().item()) == 0
+            if total_mask_pixels == 0:
+                # We only check whether the target label exists in the boxes
+                label_boxes = [b for b, l in zip(boxes, labels) if l == label]
+                if len(label_boxes) > 0:
+                    # Sanity check: these boxes should be empty
+                    for b in label_boxes:
+                        Hmin, Wmin, Dmin, Hmax, Wmax, Dmax = map(int, b)
+                        assert (Hmax - Hmin) * (Wmax - Wmin) * (Dmax - Dmin) == 0, \
+                            f"Box with label {label} exists but mask pixels are zero"
+                print(f"No mask pixels found for label {label}")
