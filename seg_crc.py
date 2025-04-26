@@ -61,7 +61,7 @@ if config['neptune']:
     run = neptune.init_run(project="ProjektMMG/CRC")
     run["parameters/config"] = config
     run["sys/group_tags"].add([mode])
-    run["sys/group_tags"].add(["CV-10-3d"])
+    run["sys/group_tags"].add(["CV-10-2d"])
 else:
     run = None
 
@@ -230,20 +230,27 @@ test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_work
 
 # %%
 if mode == '2d':
-    model = UNet(
-        spatial_dims=2,
-        in_channels=1,
-        out_channels=1,
-        channels=[32, 64, 128, 256, 512],
-        strides=[2, 2, 2, 2],
-        kernel_size=3,
-        up_kernel_size=3,
-        num_res_units=2,
-        act=("PReLU", {}),
-        norm=("instance", {"affine": False}),
-        dropout=0.1,
-        bias=True,
-    )
+    spatial_dims = 2
+elif mode == '3d':
+    spatial_dims = 3
+
+model = UNet(
+    spatial_dims=spatial_dims,
+    in_channels=1,
+    out_channels=1,
+    # channels=[32, 64, 128, 256, 512],
+    channels=[16, 32, 64, 128, 256],
+    # channels=[8, 16, 32, 64, 128],
+
+    strides=[2, 2, 2, 2],
+    kernel_size=3,
+    up_kernel_size=3,
+    num_res_units=2,
+    act=("PReLU", {}),
+    norm=("instance", {"affine": False}),
+    dropout=0.1,
+    bias=True,
+)
 
 if mode == '3d':
     model = UNETR_PP(in_channels=1, out_channels=14,
