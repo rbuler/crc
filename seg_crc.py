@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from sklearn.model_selection import KFold
 
 import monai.transforms as mt
-from monai.losses import TverskyLoss, FocalLoss, DiceCELoss, DiceFocalLoss, DiceLoss
+from monai.losses import TverskyLoss, FocalLoss, DiceCELoss, DiceFocalLoss, DiceLoss, HausdorffDTLoss
 from monai.inferers import SlidingWindowInferer
 from unetr_pp.network_architecture.synapse.unetr_pp_synapse import UNETR_PP
 from monai.networks.nets import FlexibleUNet
@@ -61,7 +61,7 @@ if config['neptune']:
     run = neptune.init_run(project="ProjektMMG/CRC")
     run["parameters/config"] = config
     run["sys/group_tags"].add([mode])
-    run["sys/group_tags"].add(["CV-10-2d"])
+    run["sys/group_tags"].add(["CV-10-3d"])
 else:
     run = None
 
@@ -91,7 +91,7 @@ class LossFn:
         if self.loss_fn == "hybrid":
             return self.HybridLoss(alpha=self.alpha, beta=self.beta, gamma=self.gamma)
         elif self.loss_fn == "combo":
-            return self.ComboLoss()
+            return self.ForgivingComboLoss(alpha=self.alpha, beta=self.beta)
         elif self.loss_fn == "tversky":
             return TverskyLoss(alpha=self.alpha, beta=self.beta, sigmoid=True)
         elif self.loss_fn == "dicece":
@@ -122,17 +122,24 @@ class LossFn:
             return (self.weights[0] * tversky_loss + self.weights[1] * focal_loss)
 
 
-    class ComboLoss(torch.nn.Module):
-        def __init__(self, weights=(0.7, 0.3), gamma=2):
+
+    class ForgivingComboLoss(torch.nn.Module):
+        def __init__(self, alpha, beta, weights=(0.5, 0.3, 0.2), gamma=1.0):
             super().__init__()
-            self.dicece = DiceCELoss(sigmoid=True, squared_pred=True)
+            self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
             self.focal = FocalLoss(gamma=gamma)
+            self.hausdorff = HausdorffDTLoss(sigmoid=True, alpha=2.0)  # L2 distance, smooth boundary
+
             self.weights = weights
 
         def forward(self, logits, targets):
-            dicece_loss = self.dicece(logits, targets)
-            focal_loss = self.focal(logits, targets)
-            return (self.weights[0] * dicece_loss + self.weights[1] * focal_loss)
+            t_loss = self.tversky_loss(logits, targets)
+            f_loss = self.focal(logits, targets)
+            h_loss = self.hausdorff(logits, targets)
+
+            return (self.weights[0] * t_loss +
+                    self.weights[1] * f_loss +
+                    self.weights[2] * h_loss)
 
 
 
