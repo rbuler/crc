@@ -1,6 +1,5 @@
 # %%
 import os
-import re
 import sys
 import ast
 import yaml
@@ -52,12 +51,8 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 random.seed(seed)
-torch.use_deterministic_algorithms(True)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device  = torch.device("cpu")
 # %%
 train_transforms = mt.Compose([mt.ToTensord(keys=["image", "mask"])])
 val_transforms = mt.Compose([
@@ -90,10 +85,6 @@ kf = KFold(n_splits=SPLITS, shuffle=True, random_state=seed)
 folds = list(kf.split(ids_train_val_test))
 
 # %%
-fold = 3
-weights_path = '2d/best_model_c2a265bb-d93a-4649-b22e-0adaeaa598d7.pth'
-
-
 # 50:50
 # best_model_da3c3744-72e0-4e71-a3f3-4c5d22723ebb.pth   # 5
 # best_model_03b67c44-9f9f-4081-b33d-a447d4e3145d.pth   # 4
@@ -120,181 +111,174 @@ weights_path = '2d/best_model_c2a265bb-d93a-4649-b22e-0adaeaa598d7.pth'
 # best_model_5884f305-eefb-42de-8766-faf7fe617ad7.pth   # 9
 # best_model_95283dbf-f017-46d3-aa03-1b46a86ea5da.pth   # 10
 
-# %%
-for fold_idx, (train_idx, val_idx) in enumerate(folds):
-    if fold_idx + 1 != fold:
-        continue
 
-    train_ids = [ids_train_val_test[i] for i in train_idx]
-    val_ids = [ids_train_val_test[i] for i in val_idx]
-    test_ids = explicit_ids_test
 
-    train_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in train_ids])
-    val_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in val_ids])
-    test_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in test_ids])
+# Define paths to model weights
+paths = [
+    "best_model_9e59cf21-59ed-4afd-bfd1-eca01db3054b.pth",  # 1
+    "best_model_055f8b0c-55ef-416e-8647-d590f36df813.pth",  # 2
+    "best_model_849d1d6d-b968-459f-971a-81b522deb1ec.pth",  # 3
+    "best_model_4f0a6d5c-82fc-40b3-8352-a5d8449425bc.pth",  # 4
+    "best_model_c65738af-1683-46ff-bcbb-551cb10ca2d0.pth",  # 5
+    "best_model_17ba2d78-55d2-4306-9a9c-314c096a099a.pth",  # 6
+    "best_model_bc8487ea-da2f-4abe-9830-f9cbae95e0a1.pth",  # 7
+    "best_model_a2333010-d211-408c-bafa-738c855daf30.pth",  # 8
+    "best_model_cd69bbea-88f2-4223-9651-589db3cab61c.pth",  # 9
+    "best_model_6a56b77f-4d6b-4218-9e5d-5735e59ba4d3.pth"   # 10
+]
 
-train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
-test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
+# Iterate through each model path
+for i, path in enumerate(paths):
+    fold = i+1
+    weights_path = path
 
-# %%
-weights_path = os.path.join(config['dir']['root'], 'models', weights_path)
-
-if mode == '2d':
-    spatial_dims = 2
-    model = UNet(
-        spatial_dims=spatial_dims,
-        in_channels=1,
-        out_channels=1,
-        channels=[32, 64, 128, 256, 512],
-        strides=[2, 2, 2, 2],
-        kernel_size=3,
-        up_kernel_size=3,
-        num_res_units=2,
-        act=("PReLU", {}),
-        norm=("instance", {"affine": False}),
-        dropout=0.1,
-        bias=True)
-        
-    model.load_state_dict(torch.load(weights_path))
-    
-
-elif mode == '3d':
-
-    model = UNETR_PP(in_channels=1, out_channels=14,
-                    img_size=tuple(patch_size),
-                    depths=[3, 3, 3, 3],
-                    dims=[32, 64, 128, 256], do_ds=False)
-
-    model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
-    checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
-    model.load_state_dict(checkpoint)
-model = model.to(device)
-# %%
-nii_pth = "/media/dysk_a/jr_buler/RJG-gumed/RJG_13-02-25_nii_labels"
-# nii_pth = "/users/project1/pt01191/CRC/Data/RJG_13-02-25_nii_labels"
-cut_filter_mask_paths = []
-pattern = re.compile(r'^\d+a$') # take only those ##a
-
-for root, dirs, files in os.walk(nii_pth, topdown=False):
-    for name in files:
-        f = os.path.join(root, name)
-        folder_name = f.split('/')[-2]
-        if not pattern.match(folder_name):
-            continue
-        if 'labels.nii.gz' in f:
-            continue
-        elif 'labels_cut.nii.gz' in f:
-            continue
-        elif '_cut.nii.gz' in f:
-            continue
-        elif '_body.nii.gz' in f:
-            continue
-        elif 'cut_filterMask.nii.gz' in f:
-            cut_filter_mask_paths.append(f)
-        elif 'instance_mask.nii.gz' in f:
-            continue
-        elif 'nii.gz' in f:
-            continue
-        elif 'mapping.pkl' in f:
+    # Split dataset into train, validation, and test sets
+    for fold_idx, (train_idx, val_idx) in enumerate(folds):
+        if fold_idx + 1 != fold:
             continue
 
+        train_ids = [ids_train_val_test[i] for i in train_idx]
+        val_ids = [ids_train_val_test[i] for i in val_idx]
+        test_ids = explicit_ids_test
 
+        train_dataset = torch.utils.data.Subset(
+            dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in train_ids]
+        )
+        val_dataset = torch.utils.data.Subset(
+            dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in val_ids]
+        )
+        test_dataset = torch.utils.data.Subset(
+            dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in test_ids]
+        )
 
-inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=1, mode="gaussian", overlap=0.75, device=torch.device('cpu'))
-model.eval()
+        # Create data loaders
+        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+        val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
+        test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 
-total_iou = 0
-total_dice = 0
-total_tpr = 0
-total_precision = 0
-probs = 0.5
-
-dataloader = val_dataloader
-dataloader.dataset.dataset.set_mode(train_mode=False)
-
-print(fold)
-print(val_ids)
-num_samples = len(dataloader)
-
-# %%
-with torch.no_grad():
-    for i, (_, _, image, mask, id) in enumerate(dataloader):
-
-        inputs = image.to(device, dtype=torch.float32)
-        targets = mask.to(device, dtype=torch.long)
-
-        if mode ==  '2d':
-            inputs = inputs.permute(1, 0, 2, 3)
-            targets = targets.permute(1, 0, 2, 3)
-            logits = model(inputs)
-        elif mode =='3d':
-            inputs = inputs.unsqueeze(0)
-            targets = targets.to(torch.device('cpu'))
-            logits = inferer(inputs=inputs, network=model)
-            logits = logits.squeeze(0)
-        
-            if isinstance(id, (list, tuple)):
-                id = id[0]
-            if not isinstance(id, str):
-                id = str(id)
-            patient_id_str = ''.join(filter(str.isdigit, id))
-
-            filter_mask_path = next(
-                (path for path in cut_filter_mask_paths
-                if ''.join(filter(str.isdigit, os.path.basename(path).split('_')[0].split(' ')[0])) == patient_id_str),
-                None
+        # Load model weights
+        weights_path = os.path.join(config['dir']['root'], 'models', weights_path)
+        if mode == '2d':
+            model = UNet(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                channels=[32, 64, 128, 256, 512],
+                strides=[2, 2, 2, 2],
+                kernel_size=3,
+                up_kernel_size=3,
+                num_res_units=2,
+                act=("PReLU", {}),
+                norm=("instance", {"affine": False}),
+                dropout=0.1,
+                bias=True
             )
-            filter_mask = nib.load(filter_mask_path).get_fdata()
-            filter_mask = filter_mask.astype(np.float32)
-            filter_mask = torch.from_numpy(filter_mask)
-            filter_mask = filter_mask.permute(2, 0, 1).unsqueeze(0)
-            
-            logits[filter_mask < 0.5]  = -999.
+            model.load_state_dict(torch.load(weights_path))
+        elif mode == '3d':
+            model = UNETR_PP(
+                in_channels=1,
+                out_channels=14,
+                img_size=tuple(patch_size),
+                depths=[3, 3, 3, 3],
+                dims=[32, 64, 128, 256],
+                do_ds=False
+            )
+            model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+            checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
+            model.load_state_dict(checkpoint)
+        model = model.to(device)
+
+        # Initialize inferer
+        # gaussian or not?
+        inferer = SlidingWindowInferer(
+            roi_size=tuple(patch_size), sw_batch_size=1, overlap=0.75, device=torch.device('cpu')
+        )
+        model.eval()
+
+        # Initialize metrics
+        total_iou, total_dice, total_tpr, total_precision = 0, 0, 0, 0
+        probs = 0.5
+
+        # Set dataloader mode
+        dataloader = val_dataloader
+        dataloader.dataset.dataset.set_mode(train_mode=False)
+
+        print(fold)
+        print(val_ids)
+        num_samples = len(dataloader)
+
+        # Perform inference
+        with torch.no_grad():
+            for i, (_, _, image, mask, id) in enumerate(dataloader):
+                if mode == '2d':
+                    inputs = image.to(device, dtype=torch.float32)
+                    targets = mask.to(device, dtype=torch.long)
+                    inputs = inputs.permute(1, 0, 2, 3)
+                    targets = targets.permute(1, 0, 2, 3)
+                    logits = model(inputs)
+                elif mode == '3d':
+                    inputs = image.to(device, dtype=torch.float32)
+                    targets = mask["mask"].to(torch.device('cpu'), dtype=torch.long)
+                    body_mask = mask["body_mask"].to(torch.device('cpu'), dtype=torch.long)
+                    inputs = inputs.unsqueeze(0)
+                    targets = targets.unsqueeze(0)
+                    body_mask = body_mask.unsqueeze(0)
+                    overlap = 63 / 64
+                    inferer = SlidingWindowInferer(
+                        roi_size=tuple(patch_size), sw_batch_size=1, overlap=overlap, device=torch.device('cpu')
+                    )
+                    logits = inferer(inputs=inputs, network=model)
+                    logits[body_mask == 0] = -1e10
 
 
+                # Evaluate segmentation metrics
+                metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
+                print(f"Patient {i + 1}/{num_samples}/id={id}: "
+                    f"IoU: {metrics['IoU']:.4f}, Dice: {metrics['Dice']:.4f}, "
+                    f"TPR: {metrics['TPR']:.4f}, Precision: {metrics['Precision']:.4f}")
 
-        metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
-        print(f"Patient {i + 1}/{num_samples}/id={id}: "
-              f"IoU: {metrics['IoU']:.4f}, Dice: {metrics['Dice']:.4f}, "
-              f"TPR: {metrics['TPR']:.4f}, "
-              f"Precision: {metrics['Precision']:.4f}")
-        # draw histogram of logit values
-  
-        final_output = torch.sigmoid(logits)
-        if mode == '3d':
-            final_output = (final_output.squeeze(0) > 0.5).cpu().numpy().astype(np.uint8)
-        elif mode == '2d':
-            final_output = (final_output.squeeze(1) > 0.5).cpu().numpy().astype(np.uint8)
+                # Process final output
+                final_output = torch.sigmoid(logits)
+                if mode == '3d':
+                    final_output = (final_output.squeeze(0) > 0.5).cpu().numpy().astype(np.uint8)
+                elif mode == '2d':
+                    final_output = (final_output.squeeze(1) > 0.5).cpu().numpy().astype(np.uint8)
+                    
+                
+                mask = targets.squeeze(0).cpu().numpy().astype(np.uint8)
+                combined_output = np.zeros_like(mask)
+                combined_output[mask == 1] = 1
+                combined_output[final_output == 1] = 2
+                combined_output[(mask == 1) & (final_output == 1)] = 3
 
+                # Create a folder for the current patient ID
+                output_dir = os.path.join("inference_output", f"patient_{id}")
+                os.makedirs(output_dir, exist_ok=True)
 
+                # Save the image, mask, and combined output
+                mask = mask.squeeze(0)
+                combined_output = combined_output.squeeze(0)
 
-        mask = mask.squeeze(0).cpu().numpy().astype(np.uint8)
+                image_nifti = nib.Nifti1Image(image.squeeze(0).cpu().numpy(), np.eye(4))
+                mask_nifti = nib.Nifti1Image(mask, np.eye(4))
+                combined_output_nifti = nib.Nifti1Image(combined_output, np.eye(4))
+                nib.save(image_nifti, os.path.join(output_dir, f"{id}_image.nii.gz"))
+                nib.save(mask_nifti, os.path.join(output_dir, f"{id}_mask.nii.gz"))
+                nib.save(combined_output_nifti, os.path.join(output_dir, f"{id}_result.nii.gz"))
+                # TODO: Add functionality to save NIfTI files for 2D approach
+                # nib.save(combined_output_nifti, f'inference_output/final_output_filtered_{fold}_{id}.nii.gz')
 
-        combined_output = np.zeros_like(mask)
-        combined_output[mask == 1] = 1
-        combined_output[final_output == 1] = 2
-        combined_output[(mask == 1) & (final_output == 1)] = 3
+                # Update metrics
+                total_iou += metrics["IoU"]
+                total_dice += metrics["Dice"]
+                total_tpr += metrics["TPR"]
+                total_precision += metrics["Precision"]
+            # Calculate average metrics
+            avg_iou = total_iou / num_samples
+            avg_dice = total_dice / num_samples
+            avg_tpr = total_tpr / num_samples
+            avg_precision = total_precision / num_samples
 
-        combined_output_nifti = nib.Nifti1Image(combined_output, np.eye(4))
-       
-        # TODO add functinality to save nifti files for 2d approach
-        #
-        #
-
-        # nib.save(combined_output_nifti, f'inference_output/final_output_filtered_{fold}_{id}.nii.gz')
-        
-        total_iou += metrics["IoU"]
-        total_dice += metrics["Dice"]
-        total_tpr += metrics["TPR"]
-        total_precision += metrics["Precision"]
-    avg_iou = total_iou / num_samples
-    avg_dice = total_dice / num_samples
-    avg_tpr = total_tpr / num_samples
-    avg_precision = total_precision / num_samples
-
-    print(f"Average IoU: {avg_iou:.4f}, Average Dice: {avg_dice:.4f}, "
-          f"Average TPR: {avg_tpr:.4f}, "
-          f"Average Precision: {avg_precision:.4f}")
-
+            print(f"Average IoU: {avg_iou:.4f}, Average Dice: {avg_dice:.4f}, "
+                f"Average TPR: {avg_tpr:.4f}, Average Precision: {avg_precision:.4f}")
 # %%
