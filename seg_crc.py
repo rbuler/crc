@@ -90,8 +90,8 @@ class LossFn:
     def get_loss(self):
         if self.loss_fn == "hybrid":
             return self.HybridLoss(alpha=self.alpha, beta=self.beta, gamma=self.gamma)
-        elif self.loss_fn == "combo":
-            return self.ForgivingComboLoss(alpha=self.alpha, beta=self.beta)
+        elif self.loss_fn == "hybrid_smooth":
+            return self.HybridLoss_Smooth(alpha=self.alpha, beta=self.beta)
         elif self.loss_fn == "tversky":
             return TverskyLoss(alpha=self.alpha, beta=self.beta, sigmoid=True)
         elif self.loss_fn == "dicece":
@@ -121,25 +121,28 @@ class LossFn:
             focal_loss = self.focal_loss(logits, targets)
             return (self.weights[0] * tversky_loss + self.weights[1] * focal_loss)
 
-
-
-    class ForgivingComboLoss(torch.nn.Module):
-        def __init__(self, alpha, beta, weights=(0.5, 0.3, 0.2), gamma=1.0):
+    class HybridLoss_Smooth(torch.nn.Module):
+        def __init__(self, alpha, beta, weights=(0.8, 0.2), gamma=1.0, smoothing=0.05):
             super().__init__()
             self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
-            self.focal = FocalLoss(gamma=gamma)
-            self.hausdorff = HausdorffDTLoss(sigmoid=True, alpha=2.0)  # L2 distance, smooth boundary
-
+            self.focal_loss = FocalLoss(gamma=gamma)
             self.weights = weights
+            self.smoothing = smoothing
+
+        @staticmethod
+        def smooth_targets(targets, smoothing):
+            with torch.no_grad():
+                targets = targets * (1 - smoothing) + 0.5 * smoothing
+            return targets
 
         def forward(self, logits, targets):
-            t_loss = self.tversky_loss(logits, targets)
-            f_loss = self.focal(logits, targets)
-            h_loss = self.hausdorff(logits, targets)
+            targets = self.smooth_targets(targets, smoothing=self.smoothing)
 
-            return (self.weights[0] * t_loss +
-                    self.weights[1] * f_loss +
-                    self.weights[2] * h_loss)
+            tversky = self.tversky_loss(logits, targets)
+            focal = self.focal_loss(logits, targets)
+
+            return (self.weights[0] * tversky + self.weights[1] * focal)
+
 
 
 
