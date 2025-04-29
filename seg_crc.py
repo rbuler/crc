@@ -15,11 +15,10 @@ from torch.utils.data import DataLoader
 from sklearn.model_selection import KFold
 
 import monai.transforms as mt
-from monai.losses import TverskyLoss, FocalLoss, DiceCELoss, DiceFocalLoss, DiceLoss, HausdorffDTLoss
+from monai.losses import TverskyLoss, FocalLoss, DiceCELoss, DiceFocalLoss, DiceLoss
 from monai.inferers import SlidingWindowInferer
 from unetr_pp.network_architecture.synapse.unetr_pp_synapse import UNETR_PP
-from monai.networks.nets import FlexibleUNet
-from monai.networks.nets import UNet, UNETR
+from monai.networks.nets import UNet
 from dataset_seg import CRCDataset_seg
 from net_utils import train_net, test_net
 
@@ -77,6 +76,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if run:
     fold = args.fold if args.fold else config['fold']
     run['train/current_fold'] = fold
+else:
+    fold = config['fold']
 # %%
 class LossFn:
     def __init__(self, loss_fn, alpha=0.25, beta=0.75, weight=None, gamma=2.0, device=None):
@@ -225,7 +226,19 @@ if mode == '2d':
 elif mode == '3d':
     collate_fn = None
 
-train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_fn)
+
+
+hard_cases = [127, 19, 40, 72, 135, 30, 11, 20, 138, 57, 1, 150, 53, 96, 210, 81, 137, 59, 155, 6, 4, 10, 21, 173, 209, 76, 199, 2, 143, 157, 97, 69, 174]
+weights = []
+for pid in train_ids:
+    if pid in hard_cases:
+        weights.append(5.0)
+    else:
+        weights.append(1.0)
+# %%
+sampler = torch.utils.data.WeightedRandomSampler(weights, len(weights), replacement=True)
+
+train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=num_workers, collate_fn=collate_fn, sampler=sampler)
 val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 
