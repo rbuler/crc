@@ -113,7 +113,6 @@ folds = list(kf.split(ids_train_val_test))
 
 
 
-# Define paths to model weights
 paths = [
     "best_model_9e59cf21-59ed-4afd-bfd1-eca01db3054b.pth",  # 1
     "best_model_055f8b0c-55ef-416e-8647-d590f36df813.pth",  # 2
@@ -127,12 +126,10 @@ paths = [
     "best_model_6a56b77f-4d6b-4218-9e5d-5735e59ba4d3.pth"   # 10
 ]
 
-# Iterate through each model path
 for i, path in enumerate(paths):
     fold = i+1
     weights_path = path
 
-    # Split dataset into train, validation, and test sets
     for fold_idx, (train_idx, val_idx) in enumerate(folds):
         if fold_idx + 1 != fold:
             continue
@@ -151,12 +148,10 @@ for i, path in enumerate(paths):
             dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in test_ids]
         )
 
-        # Create data loaders
         train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
         val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
         test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 
-        # Load model weights
         weights_path = os.path.join(config['dir']['root'], 'models', weights_path)
         if mode == '2d':
             model = UNet(
@@ -188,18 +183,15 @@ for i, path in enumerate(paths):
             model.load_state_dict(checkpoint)
         model = model.to(device)
 
-        # Initialize inferer
         # gaussian or not?
         inferer = SlidingWindowInferer(
-            roi_size=tuple(patch_size), sw_batch_size=1, overlap=0.75, device=torch.device('cpu')
+            roi_size=tuple(patch_size), sw_batch_size=1, overlap=0.75, mode="constant", device=torch.device('cpu')
         )
         model.eval()
 
-        # Initialize metrics
         total_iou, total_dice, total_tpr, total_precision = 0, 0, 0, 0
         probs = 0.5
 
-        # Set dataloader mode
         dataloader = val_dataloader
         dataloader.dataset.dataset.set_mode(train_mode=False)
 
@@ -207,7 +199,6 @@ for i, path in enumerate(paths):
         print(val_ids)
         num_samples = len(dataloader)
 
-        # Perform inference
         with torch.no_grad():
             for i, (_, _, image, mask, id) in enumerate(dataloader):
                 if mode == '2d':
@@ -221,23 +212,18 @@ for i, path in enumerate(paths):
                     targets = mask["mask"].to(torch.device('cpu'), dtype=torch.long)
                     body_mask = mask["body_mask"].to(torch.device('cpu'), dtype=torch.long)
                     inputs = inputs.unsqueeze(0)
+
+                    original_depth = inputs.shape[2]
                     targets = targets.unsqueeze(0)
                     body_mask = body_mask.unsqueeze(0)
-                    overlap = 63 / 64
-                    inferer = SlidingWindowInferer(
-                        roi_size=tuple(patch_size), sw_batch_size=1, overlap=overlap, device=torch.device('cpu')
-                    )
                     logits = inferer(inputs=inputs, network=model)
                     logits[body_mask == 0] = -1e10
-
-
-                # Evaluate segmentation metrics
+                
                 metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
                 print(f"Patient {i + 1}/{num_samples}/id={id}: "
                     f"IoU: {metrics['IoU']:.4f}, Dice: {metrics['Dice']:.4f}, "
                     f"TPR: {metrics['TPR']:.4f}, Precision: {metrics['Precision']:.4f}")
 
-                # Process final output
                 final_output = torch.sigmoid(logits)
                 if mode == '3d':
                     final_output = (final_output.squeeze(0) > 0.5).cpu().numpy().astype(np.uint8)
@@ -251,11 +237,9 @@ for i, path in enumerate(paths):
                 combined_output[final_output == 1] = 2
                 combined_output[(mask == 1) & (final_output == 1)] = 3
 
-                # Create a folder for the current patient ID
                 output_dir = os.path.join("inference_output", f"patient_{id}")
                 os.makedirs(output_dir, exist_ok=True)
 
-                # Save the image, mask, and combined output
                 mask = mask.squeeze(0)
                 combined_output = combined_output.squeeze(0)
 
@@ -268,12 +252,10 @@ for i, path in enumerate(paths):
                 # TODO: Add functionality to save NIfTI files for 2D approach
                 # nib.save(combined_output_nifti, f'inference_output/final_output_filtered_{fold}_{id}.nii.gz')
 
-                # Update metrics
                 total_iou += metrics["IoU"]
                 total_dice += metrics["Dice"]
                 total_tpr += metrics["TPR"]
                 total_precision += metrics["Precision"]
-            # Calculate average metrics
             avg_iou = total_iou / num_samples
             avg_dice = total_dice / num_samples
             avg_tpr = total_tpr / num_samples
