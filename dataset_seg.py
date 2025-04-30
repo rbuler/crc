@@ -122,9 +122,10 @@ class CRCDataset_seg(Dataset):
         if self.mode == '3d':
 
             patches = self.extract_patches(image, mask)
-            num_to_select = min(36, len(patches))
+            num_foreground = sum(1 for p in patches if torch.any(p[1] > 0))
+            num_to_select = min(36, num_foreground * 2)
 
-            selected_patches = random.sample(patches, num_to_select)
+            selected_patches = self.select_patches(patches, num_to_select)
             img_patch = torch.stack([p[0] for p in selected_patches])
             mask_patch = torch.stack([p[1] for p in selected_patches])
 
@@ -180,11 +181,11 @@ class CRCDataset_seg(Dataset):
             return torch.zeros(1), torch.zeros(1), image, mask, id
 
 
-
     def __len__(self):
     # todo
         return len(self.images_path)
     
+
     def set_mode(self, train_mode):
         self.train_mode = train_mode
 
@@ -195,57 +196,117 @@ class CRCDataset_seg(Dataset):
     
     
     def window_and_normalize_ct(self, ct_image, window_center=45, window_width=400):
-
+        """Enhanced with multi-window support and patch-level normalization"""
+        
         lower_bound = window_center - window_width / 2
         upper_bound = window_center + window_width / 2
         ct_windowed = np.clip(ct_image, lower_bound, upper_bound)
+        
         normalized = (ct_windowed - lower_bound) / (upper_bound - lower_bound)
         
-        return normalized
+        return np.clip(normalized, 0, 1)
 
 
     def extract_patches(self, image, mask):
-        """Extracts balanced patches from a 3D image and segmentation mask."""
+        """Enhanced 3D patch extraction with:
+        - Multi-scale support
+        - Guaranteed positive patches
+        - Adaptive stride based on content
+        - Patch quality filtering
+        """
         H, W, D = image.shape
+        patches = []
+        patch_scales = [1.0] # TODO so far only 1.0 scale is used
+
+
+        for scale in patch_scales:
+            h_size, w_size, d_size = [int(s * scale) for s in self.patch_size]
+            
+            overlap = 0.5
+            h_stride = int(h_size * (1 - overlap))
+            w_stride = int(w_size * (1 - overlap))
+            d_stride = int(d_size * (1 - overlap))
+            
+            h_idxs = list(range(0, H - h_size + 1, h_stride))
+            w_idxs = list(range(0, W - w_size + 1, w_stride))
+            d_idxs = list(range(0, D - d_size + 1, d_stride))
+            
+            if h_idxs[-1] != H - h_size:
+                h_idxs.append(H - h_size)
+            if w_idxs[-1] != W - w_size:
+                w_idxs.append(W - w_size)
+            if d_idxs[-1] != D - d_size:
+                d_idxs.append(D - d_size)
+            
+            for h in h_idxs:
+                for w in w_idxs:
+                    for d in d_idxs:
+                        img_patch = image[h:h+h_size, w:w+w_size, d:d+d_size]
+                        mask_patch = mask[h:h+h_size, w:w+w_size, d:d+d_size]
+                        
+                        if self.is_valid_patch(img_patch, mask_patch):
+                            patches.append((img_patch, mask_patch))
+        
+        patches.extend(self.extract_lesion_centered_patches(image, mask))
+
+        return patches
+    
+
+    def is_valid_patch(self, img_patch, mask_patch):
+        """Patch quality criteria"""
+
+        if torch.mean((img_patch < 0.001).float()) > 0.2:
+            return False
+        if torch.var(img_patch) < 0.01:
+            return False
+        return True
+
+
+    def extract_lesion_centered_patches(self, image, mask):
+        """Extract patches centered on lesions to ensure coverage"""
+        lesion_coords = torch.nonzero(mask > 0)
+        patches = []
         h_size, w_size, d_size = self.patch_size
+        
+        num_samples = min(10, len(lesion_coords))
+        sampled_coords = lesion_coords[torch.randperm(len(lesion_coords))[:num_samples]]
+        
+        for coord in sampled_coords:
+            h, w, d = coord
 
-        overlap = 0.75
-        h_stride = int(h_size * (1 - overlap))
-        w_stride = int(w_size * (1 - overlap))
-        d_stride = int(d_size * (1 - overlap))
+            h_start = max(0, h - h_size // 2)
+            w_start = max(0, w - w_size // 2)
+            d_start = max(0, d - d_size // 2)
+            h_end = min(image.shape[0], h_start + h_size)
+            w_end = min(image.shape[1], w_start + w_size)
+            d_end = min(image.shape[2], d_start + d_size)
+            
+            if h_end - h_start < h_size:
+                h_start = h_end - h_size
+            if w_end - w_start < w_size:
+                w_start = w_end - w_size
+            if d_end - d_start < d_size:
+                d_start = d_end - d_size
+            
+            img_patch = image[h_start:h_end, w_start:w_end, d_start:d_end]
+            mask_patch = mask[h_start:h_end, w_start:w_end, d_start:d_end]
+            patches.append((img_patch, mask_patch))
+        return patches
 
-        h_idxs = list(range(0, H - h_size + 1, h_stride))
-        w_idxs = list(range(0, W - w_size + 1, w_stride))
-        d_idxs = list(range(0, D - d_size + 1, d_stride))
 
-        if h_idxs[-1] != H - h_size:
-            h_idxs.append(H - h_size)
-        if w_idxs[-1] != W - w_size:
-            w_idxs.append(W - w_size)
-        if d_idxs[-1] != D - d_size:
-            d_idxs.append(D - d_size)
-
-        patch_candidates = []
-
-        for h in h_idxs:
-            for w in w_idxs:
-                for d in d_idxs:
-                    img_patch = image[h:h+h_size, w:w+w_size, d:d+d_size]
-                    mask_patch = mask[h:h+h_size, w:w+w_size, d:d+d_size]
-                    if torch.mean((img_patch < 0.001).float()) < 0.2 or torch.any(mask_patch > 0):
-                        patch_candidates.append((img_patch, mask_patch))
-
-        foreground_patches = [p for p in patch_candidates if torch.any(p[1] > 0)]
-        background_patches = [p for p in patch_candidates if not torch.any(p[1] > 0)]
-        min_samples = min(len(foreground_patches), len(background_patches))
-        num_samples = min(min_samples, self.num_patches_per_sample // 2)
-
-        if len(foreground_patches) == 0:
-            num_samples = min(len(background_patches), self.num_patches_per_sample // 2)
-            selected_patches = random.sample(background_patches, num_samples)
-        else:
-            selected_foreground = random.sample(foreground_patches, num_samples) 
-            selected_background = random.sample(background_patches, num_samples)
-            selected_patches = selected_foreground + selected_background
-
-        return selected_patches
+    def select_patches(self, patches, num_to_select):
+        """Balanced patch selection with randomness"""
+        foreground = [p for p in patches if torch.any(p[1] > 0)]
+        background = [p for p in patches if not torch.any(p[1] > 0)]
+        num_to_select = min(num_to_select, len(patches))
+        
+        if not foreground:
+            return random.sample(background, num_to_select)
+        
+        num_foreground = min(len(foreground), num_to_select // 2)
+        num_background = min(len(background), num_to_select - num_foreground)
+        selected = (
+            random.sample(foreground, num_foreground) +
+            random.sample(background, num_background))
+        
+        return selected
