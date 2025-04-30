@@ -228,17 +228,18 @@ elif mode == '3d':
 
 
 
-hard_cases = [127, 19, 40, 72, 135, 30, 11, 20, 138, 57, 1, 150, 53, 96, 210, 81, 137, 59, 155, 6, 4, 10, 21, 173, 209, 76, 199, 2, 143, 157, 97, 69, 174]
-weights = []
-for pid in train_ids:
-    if pid in hard_cases:
-        weights.append(5.0)
-    else:
-        weights.append(1.0)
+# hard_cases = []
+# weights = []
+# for pid in train_ids:
+#     if pid in hard_cases:
+#         weights.append(5.0)
+#     else:
+#         weights.append(1.0)
+# sampler = torch.utils.data.WeightedRandomSampler(weights, len(weights), replacement=True)
+# train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=num_workers, collate_fn=collate_fn, sampler=sampler)
 # %%
-sampler = torch.utils.data.WeightedRandomSampler(weights, len(weights), replacement=True)
 
-train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=num_workers, collate_fn=collate_fn, sampler=sampler)
+train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_fn)
 val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 
