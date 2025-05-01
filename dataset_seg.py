@@ -2,10 +2,11 @@ import os
 import re
 import torch
 import random
+import logging
 import numpy as np
 import nibabel as nib
+import torch.nn.functional as F
 from torch.utils.data import Dataset
-import logging
 
 
 logger = logging.getLogger(__name__)
@@ -84,21 +85,35 @@ class CRCDataset_seg(Dataset):
             else:
                 image_path = self.cut_images_path[idx]
             mask_path = self.cut_mask_path[idx]
-
-        image = np.asarray(nib.load(image_path).dataobj)
-        image = torch.from_numpy(image)
-        mask = np.asarray(nib.load(mask_path).dataobj)
-        mask = torch.from_numpy(mask)
-        body_mask = np.asarray(nib.load(body_mask_path).dataobj)
-        body_mask = torch.from_numpy(body_mask)
-
+        
         id = self.get_patient_id(idx).strip("'")
+        
+        # load original image for original spacing
+        original_image_nib = nib.load(self.images_path[idx])
+        # extract spacing info
+        image_spacing = original_image_nib.header.get_zooms()[:3]  # assumes z, y, x order
+        target_spacing = (1.0, 1.0, 1.0)
+
+        # load images
+        image_nib = nib.load(image_path)
+        mask_nib = nib.load(mask_path)
+        body_mask_nib = nib.load(body_mask_path)
+
+
+        # convert to tensors
+        image = torch.from_numpy(np.asarray(image_nib.dataobj))
+        mask = torch.from_numpy(np.asarray(mask_nib.dataobj))
+        body_mask = torch.from_numpy(np.asarray(body_mask_nib.dataobj))
 
 
         if len(image.shape) == 4:
             image = image[:, :, 0, :]
         if len(mask.shape) == 4:
             mask = mask[:, :, 0, :]
+
+        image = resample_tensor(image, image_spacing, target_spacing, is_label=False)
+        mask = resample_tensor(mask, image_spacing, target_spacing, is_label=True)
+        body_mask = resample_tensor(body_mask, image_spacing, target_spacing, is_label=True)
 
         window_center = 45
         window_width = 400
@@ -123,7 +138,10 @@ class CRCDataset_seg(Dataset):
 
             patches = self.extract_patches(image, mask)
             num_foreground = sum(1 for p in patches if torch.any(p[1] > 0))
-            num_to_select = min(36, num_foreground * 2)
+            if num_foreground == 0:
+                num_to_select = 36
+            else:
+                num_to_select = min(36, num_foreground * 2)
 
             selected_patches = self.select_patches(patches, num_to_select)
             img_patch = torch.stack([p[0] for p in selected_patches])
@@ -310,3 +328,13 @@ class CRCDataset_seg(Dataset):
             random.sample(background, num_background))
         
         return selected
+    
+
+def resample_tensor(image, original_spacing, target_spacing=(1.0, 1.0, 1.0), is_label=False):
+    scale = [o / t for o, t in zip(original_spacing, target_spacing)]
+    new_shape = [int(round(s * dim)) for s, dim in zip(scale, image.shape)]
+    
+    image = image.unsqueeze(0).unsqueeze(0).float()  # [B, C, D, H, W]
+    mode = 'nearest' if is_label else 'trilinear'
+    resampled = F.interpolate(image, size=new_shape, mode=mode, align_corners=False if not is_label else None)
+    return resampled.squeeze()
