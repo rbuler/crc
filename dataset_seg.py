@@ -146,17 +146,24 @@ class CRCDataset_seg(Dataset):
             selected_patches = self.select_patches(patches, num_to_select)
             img_patch = torch.stack([p[0] for p in selected_patches])
             mask_patch = torch.stack([p[1] for p in selected_patches])
-
+            print(img_patch.shape, mask_patch.shape)
             
             if (self.transforms is not None) and self.train_mode:
-                data_to_transform = {"image": img_patch, "mask": mask_patch}
-                transformed_patches = self.transforms[0](data_to_transform)  # train_transforms
-                img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
+                transformed = [
+                    self.transforms[0]({"image": img.unsqueeze(0), "mask": msk.unsqueeze(0)})
+                    for img, msk in zip(img_patch, mask_patch)
+                ]
+                img_patch = torch.stack([t["image"].squeeze(0) for t in transformed])
+                mask_patch = torch.stack([t["mask"].squeeze(0) for t in transformed])
                 return img_patch, mask_patch, torch.zeros(1), torch.zeros(1), id
+            
             elif (self.transforms is not None) and not self.train_mode:
-                data_to_transform = {"image": img_patch, "mask": mask_patch}
-                transformed_patches = self.transforms[1](data_to_transform)  # val_transforms
-                img_patch, mask_patch = transformed_patches["image"], transformed_patches["mask"]
+                transformed = [
+                    self.transforms[1]({"image": img.unsqueeze(0), "mask": msk.unsqueeze(0)})
+                    for img, msk in zip(img_patch, mask_patch)
+                ]
+                img_patch = torch.stack([t["image"].squeeze(0) for t in transformed])
+                mask_patch = torch.stack([t["mask"].squeeze(0) for t in transformed])
                 mask = {"mask": mask, "body_mask": body_mask}
                 return img_patch, mask_patch, image, mask, id
         
