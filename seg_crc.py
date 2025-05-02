@@ -154,11 +154,14 @@ train_transforms = mt.Compose([
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=1),
     mt.RandFlipd(keys=["image", "mask"], prob=0.5, spatial_axis=2) if mode == '3d' else mt.Lambda(lambda x: x),
     mt.Rand2DElasticd(keys=["image", "mask"], spacing=(10, 10), magnitude_range=(1, 2), prob=0.25, mode=["bilinear", "nearest"]) if mode == '2d' else mt.Lambda(lambda x: x),
+    mt.Rand3DElasticd(keys=["image", "mask"], sigma_range=(2, 5), magnitude_range=(1, 2), prob=0.2, mode=["trilinear", "nearest"]) if mode == '3d' else mt.Lambda(lambda x: x),
     mt.RandGaussianNoised(keys=['image'], prob=0.25, mean=0.0, std=0.01),
-    mt.RandShiftIntensityd(keys=['image'], offsets=0.05, prob=0.25),
-    mt.RandStdShiftIntensityd(keys=['image'], factors=0.05, prob=0.25),
-    mt.RandScaleIntensityd(keys=['image'], factors=0.1, prob=0.25),
-    mt.RandScaleIntensityFixedMeand(keys=['image'], factors=0.05, prob=0.25),
+    mt.OneOf([
+        mt.RandShiftIntensityd(keys=['image'], offsets=0.05),
+        mt.RandStdShiftIntensityd(keys=['image'], factors=0.05),
+        mt.RandScaleIntensityd(keys=['image'], factors=0.1),
+        mt.RandScaleIntensityFixedMeand(keys=['image'], factors=0.05)
+        ], weights=[0.25]*4),
     mt.RandGaussianSmoothd(keys=['image'], sigma_x=(0.25, .5), sigma_y=(0.25, .5), sigma_z=(0.25, .5), prob=0.25),
     mt.ToTensord(keys=["image", "mask"]),
 ])
