@@ -7,10 +7,53 @@ import logging
 import warnings
 import numpy as np
 import nibabel as nib
-import matplotlib.pyplot as plt
-from scipy.ndimage import binary_opening, binary_closing, generate_binary_structure, binary_fill_holes
+# import matplotlib.pyplot as plt
+from scipy.ndimage import label, binary_opening, binary_closing, generate_binary_structure, binary_fill_holes
 import torch
 from monai.utils import set_determinism
+
+def extract_largest_body_mask(image, threshold=-400):
+    """
+    Extracts a coarse body mask from CT by:
+    - Thresholding
+    - Morphological smoothing
+    - Keeping only the largest component per 2D slice
+    - Filling internal air bubbles (e.g. in colon)
+    """
+    # Step 1: Threshold to exclude air
+    mask = image > threshold
+
+    # Step 2: Morphological and connected-component per slice
+    structure2d = generate_binary_structure(2, 1)
+    cleaned_mask = np.zeros_like(mask, dtype=np.uint8)
+
+    for i in range(mask.shape[-1]):
+        slice_mask = mask[:, :, i]
+
+        # Morphological cleaning
+        structure_open = generate_binary_structure(2, 1)
+        structure_close = generate_binary_structure(2, 2)  # or np.ones((5,5))
+
+        slice_mask = binary_opening(slice_mask, structure=structure_open, iterations=4)
+        slice_mask = binary_closing(slice_mask, structure=structure_close, iterations=6)
+        slice_mask = binary_opening(slice_mask, structure=structure_open, iterations=4)
+        slice_mask = binary_closing(slice_mask, structure=structure_close, iterations=10)
+        # Connected components in 2D
+        labeled, num = label(slice_mask, structure=structure2d)
+
+        if num > 0:
+            sizes = np.bincount(labeled.ravel())
+            sizes[0] = 0  # ignore background
+            largest_label = sizes.argmax()
+            largest_region = (labeled == largest_label)
+
+            # Fill internal holes (e.g., air in colon)
+            largest_region = binary_fill_holes(largest_region)
+
+            cleaned_mask[:, :, i] = largest_region.astype(np.uint8)
+
+    return cleaned_mask
+
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.INFO)
@@ -64,36 +107,19 @@ for root, dirs, files in os.walk(nii_pth, topdown=False):
 # z = 0
 
 for iter in range(len(image_paths)):
+
     image = nib.load(cut_image_paths[iter]).get_fdata()
-
-    BODY_THRESHOLD = -300
-    body_mask = image > BODY_THRESHOLD
-
-    LUNG_THRESHOLD = -500
-    air_mask = image < LUNG_THRESHOLD
-
-    structure = generate_binary_structure(2, 3)
-    for i in range(body_mask.shape[-1]):
-        body_mask[:,:,i] = body_mask[:,:,i]
-        structure = generate_binary_structure(2, 3)
-        body_mask[:,:,i] = binary_opening(body_mask[:,:,i], structure=structure, iterations=4)
-        body_mask[:,:,i] = binary_fill_holes(body_mask[:,:,i])
-        structure = generate_binary_structure(2, 5)
-        body_mask[:,:,i] = binary_closing(body_mask[:,:,i], structure=structure, iterations=25)
-
-    air_inside_body_mask = np.zeros_like(body_mask, dtype=np.uint8)
-
-    # set body_mask zero values to -4096.0
+    body_mask = extract_largest_body_mask(image, threshold=-400)
     new_image = image.copy()
     new_image[body_mask == 0] = -1024.0
-    body_mask = body_mask.astype(np.uint8)
+
     # save image to file
+    new_image_nii = nib.Nifti1Image(new_image, np.eye(4))
+    print(cut_image_paths[iter].replace('.nii.gz', '_body.nii.gz'))
+    nib.save(new_image_nii, cut_image_paths[iter].replace('.nii.gz', '_body.nii.gz'))
     new_image_nii = nib.Nifti1Image(body_mask, np.eye(4))
-    # print(cut_image_paths[iter].replace('.nii.gz', '_body.nii.gz'))
     print(cut_image_paths[iter].replace('.nii.gz', '_filterMask.nii.gz'))
     nib.save(new_image_nii, cut_image_paths[iter].replace('.nii.gz', '_filterMask.nii.gz'))
-
-
     # Loop over each slice and create air mask inside the body mask
     # for i in range(body_mask.shape[-1]):
     #     body_slice = body_mask[:, :, i]
@@ -120,7 +146,6 @@ for iter in range(len(image_paths)):
 
     #         plt.tight_layout()
     #         plt.show()
-    
     # for i in range(air_inside_body_mask.shape[-1]):
     #     plt.figure()
     #     plt.imshow(air_inside_body_mask[:, :, i], cmap='gray')
