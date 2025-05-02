@@ -99,7 +99,6 @@ class CRCDataset_seg(Dataset):
         mask_nib = nib.load(mask_path)
         body_mask_nib = nib.load(body_mask_path)
 
-
         # convert to tensors
         image = torch.from_numpy(np.asarray(image_nib.dataobj))
         mask = torch.from_numpy(np.asarray(mask_nib.dataobj))
@@ -136,7 +135,7 @@ class CRCDataset_seg(Dataset):
 
         if self.mode == '3d':
 
-            patches = self.extract_patches(image, mask)
+            patches = self.extract_patches(image, mask, body_mask)
             num_foreground = sum(1 for p in patches if torch.any(p[1] > 0))
             if num_foreground == 0:
                 num_to_select = 36
@@ -146,7 +145,6 @@ class CRCDataset_seg(Dataset):
             selected_patches = self.select_patches(patches, num_to_select)
             img_patch = torch.stack([p[0] for p in selected_patches])
             mask_patch = torch.stack([p[1] for p in selected_patches])
-            print(img_patch.shape, mask_patch.shape)
             
             if (self.transforms is not None) and self.train_mode:
                 transformed = [
@@ -232,7 +230,7 @@ class CRCDataset_seg(Dataset):
         return np.clip(normalized, 0, 1)
 
 
-    def extract_patches(self, image, mask):
+    def extract_patches(self, image, mask, body_mask):
         """Enhanced 3D patch extraction with:
         - Multi-scale support
         - Guaranteed positive patches
@@ -247,7 +245,7 @@ class CRCDataset_seg(Dataset):
         for scale in patch_scales:
             h_size, w_size, d_size = [int(s * scale) for s in self.patch_size]
             
-            overlap = 0.5
+            overlap = 0.625
             h_stride = int(h_size * (1 - overlap))
             w_stride = int(w_size * (1 - overlap))
             d_stride = int(d_size * (1 - overlap))
@@ -268,8 +266,9 @@ class CRCDataset_seg(Dataset):
                     for d in d_idxs:
                         img_patch = image[h:h+h_size, w:w+w_size, d:d+d_size]
                         mask_patch = mask[h:h+h_size, w:w+w_size, d:d+d_size]
+                        body_mask_patch = body_mask[h:h+h_size, w:w+w_size, d:d+d_size]
                         
-                        if self.is_valid_patch(img_patch, mask_patch):
+                        if self.is_valid_patch(mask_patch, body_mask_patch):
                             patches.append((img_patch, mask_patch))
         
         patches.extend(self.extract_lesion_centered_patches(image, mask))
@@ -277,14 +276,16 @@ class CRCDataset_seg(Dataset):
         return patches
     
 
-    def is_valid_patch(self, img_patch, mask_patch):
+    def is_valid_patch(self, mask_patch, body_mask_patch):
         """Patch quality criteria"""
 
-        if torch.mean((img_patch < 0.001).float()) > 0.2:
+        body_fraction = torch.mean(body_mask_patch.float())
+        if body_fraction >= 0.7:
+            return True
+        elif torch.any(mask_patch > 0):
+            return True
+        else:
             return False
-        if torch.var(img_patch) < 0.01:
-            return False
-        return True
 
 
     def extract_lesion_centered_patches(self, image, mask):
