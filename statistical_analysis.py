@@ -39,7 +39,7 @@ def perform_statistical_tests(df: pd.DataFrame,
         else:
             _, p_value, _, _ = stats.chi2_contingency(contingency_table)
         proportions = contingency_table.apply(lambda r: r/r.sum(), axis=1)
-        results['proportions'] = f"N-negative: {contingency_table.iloc[0, 1]} ({proportions.iloc[0, 1]*100:.2f}%), N-positive: {contingency_table.iloc[1, 1]} ({proportions.iloc[1, 1]*100:.2f}%) for {contingency_table.columns.values[1]}"
+        results['proportions'] = f"negative: {contingency_table.iloc[0, 1]} ({proportions.iloc[0, 1]*100:.2f}%), positive: {contingency_table.iloc[1, 1]} ({proportions.iloc[1, 1]*100:.2f}%) for {contingency_table.columns.values[1]}"
     elif col_type == 'con':
         group1 = df[df[group] == "0"][column].astype(float)
         group2 = df[df[group] == "1"][column].astype(float)
@@ -55,26 +55,27 @@ def perform_statistical_tests(df: pd.DataFrame,
             _, p_value = stats.mannwhitneyu(group1, group2)
         mean_sd_group1 = f"{group1.mean():.2f} ({group1.std():.2f})"
         mean_sd_group2 = f"{group2.mean():.2f} ({group2.std():.2f})"
-        results['mean_sd'] = f"N-negative: {mean_sd_group1}, N-positive: {mean_sd_group2}"
+        results['mean_sd'] = f"negative: {mean_sd_group1}, positive: {mean_sd_group2}"
     results['p_value'] = p_value
     return results
 
 def plot_confusion_matrix(subset: pd.DataFrame, t_or_n: str) -> None:
     if t_or_n == 'T':
-        y_true = subset['pT']
-        y_pred = subset['wmT']
-        # labels = sorted(subset['pT'].unique())
-        # labels = [f"T{label}" for label in labels]
         labels = ['T0', 'T1', 'T2', 'T3', 'T4', 'T4a', 'T4b']
+        label_values = [label[1:] for label in labels]
+        both = subset['pT'].isin(label_values) & subset['wmT'].isin(label_values)
+        y_true = subset['pT'][both]
+        y_pred = subset['wmT'][both]
     elif t_or_n == 'N':
-        y_true = subset['pN']
-        y_pred = subset['wmN']
-        # labels = sorted(subset['pN'].unique())
-        # labels = [f"N{label}" for label in labels]
         labels = ['N0', 'N1a', 'N1b', 'N2a', 'N2b']
+        label_values = [label[1:] for label in labels]
+        both = subset['pN'].isin(label_values) & subset['wmN'].isin(label_values)
+        y_true = subset['pN'][both]
+        y_pred = subset['wmN'][both]
+    else:
+        raise ValueError("t_or_n must be either 'T' or 'N'")
 
-
-    cm = confusion_matrix(y_true, y_pred)
+    cm = confusion_matrix(y_true, y_pred, labels=label_values)
 
     plt.figure(figsize=(8, 6))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=labels, yticklabels=labels)
@@ -118,11 +119,11 @@ def plot_confusion_matrix(subset: pd.DataFrame, t_or_n: str) -> None:
 
 def plot_staging_distribution(subset: pd.DataFrame, column: str, label_prefix: str, title: str) -> None:
     plt.figure(figsize=(10, 6))
-    order = sorted(subset[column].unique())
+    order = sorted(subset[column].unique(), key=str)
     ax = sns.countplot(x=column, data=subset, palette='viridis', order=order)
     order = [f"{label_prefix}{label}" for label in order]
     plt.xticks(ticks=range(len(order)), labels=order)
-    plt.xlabel(title)
+    plt.title(title)
     plt.ylabel('', rotation=0)
     plt.yticks([])
     sns.despine(top=True, bottom=True, left=True, right=True)
@@ -170,13 +171,17 @@ if __name__ == '__main__':
     subset = dataset.clinical_data
     subset["N_binary"] = subset["wmN"].apply(lambda x: "1" if x != "0" else "0")
     subset['T_binary'] = subset['wmT'].apply(lambda x: "1" if x != "0" else "0")
+    subset.drop(columns=['wmM'], inplace=True)
     subset = subset.dropna()
+    labels = ['T0', 'T1', 'T2', 'T3', 'T4', 'T4a', 'T4b']
+    label_values = [label[1:] for label in labels]
+    subset = subset[subset['pT'].isin(label_values) & subset['wmT'].isin(label_values)]
 
     for key in columns_to_analyze.keys():
         print(f"Results for {key}:", end=" ")
         if columns_to_analyze[key] == "cat":
             subset.loc[:, key] = subset[key].apply(lambda x: "0" if str(x).lower() in ['x', 'tia'] else x)
-        results = perform_statistical_tests(subset, columns_to_analyze[key], key, "N_binary")
+        results = perform_statistical_tests(subset, columns_to_analyze[key], key, "T_binary")
         if columns_to_analyze[key] == "cat":
             print(subset[key].value_counts())
         print(f"{results}")
