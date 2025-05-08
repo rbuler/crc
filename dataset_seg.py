@@ -92,7 +92,7 @@ class CRCDataset_seg(Dataset):
         original_image_nib = nib.load(self.images_path[idx])
         # extract spacing info
         image_spacing = original_image_nib.header.get_zooms()[:3]  # assumes z, y, x order
-        target_spacing = (1.0, 1.0, 1.0)
+        target_spacing = (1.0, 1.0, 1.5)
 
         # load images
         image_nib = nib.load(image_path)
