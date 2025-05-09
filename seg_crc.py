@@ -186,8 +186,8 @@ dataset = CRCDataset_seg(root_dir=root,
 ids = []
 for i in range(len(dataset)):
     ids.append(int(dataset.get_patient_id(i)))
-                                                               # bad res <  #enter > tx t0
-explicit_ids_test = [31, 32, 47, 54, 78, 109, 73, 197, 204]
+                              # bad res <         5mm          > tx t0
+explicit_ids_test = [1, 19, 98, 64, 77, 173,  97, 128, 137,    31, 32, 47, 54, 78, 109, 73, 197, 204]
 # explicit_ids_test = [1, 21, 57, 4, 40, 138, 17, 102, 180, 6, 199, 46, 59,  31, 32, 47, 54, 73, 78, 109, 197, 204]
 
 
