@@ -85,20 +85,6 @@ kf = KFold(n_splits=SPLITS, shuffle=True, random_state=seed)
 folds = list(kf.split(ids_train_val_test))
 
 # %%
-# 50:50
-# best_model_da3c3744-72e0-4e71-a3f3-4c5d22723ebb.pth   # 5
-# best_model_03b67c44-9f9f-4081-b33d-a447d4e3145d.pth   # 4
-# best_model_ca393b0a-c2f3-4d2d-b96a-9f04fcb1b4a9.pth   # 3
-# best_model_d803c025-7605-4b4e-9088-54912c1661c5.pth   # 2
-# best_model_6638b88b-133f-4f78-a9d1-168a786d171a.pth   # 1
-
-# 70:30
-# best_model_8b755844-fa9c-4264-bee8-6b8165a8d718.pth   # 5
-# best_model_65e80ea4-9e33-4be5-9fa9-986f88be5ba7.pth   # 4
-# best_model_809a461c-c382-4359-9530-e2a52bd6e5b3.pth   # 3
-# best_model_217e315a-705a-4e9f-bd31-8bd9f0c9b0f2.pth   # 2
-# best_model_d61571b2-0565-48af-be4d-4c83dbb33a5d.pth   # 1
-
 # 2D
 # best_model_c769763b-84d4-488d-a56c-abe28f1f148a.pth   # 1
 # best_model_fcd998bc-0408-4c11-b513-5c5f2c6d5acb.pth   # 2
@@ -111,19 +97,30 @@ folds = list(kf.split(ids_train_val_test))
 # best_model_5884f305-eefb-42de-8766-faf7fe617ad7.pth   # 9
 # best_model_95283dbf-f017-46d3-aa03-1b46a86ea5da.pth   # 10
 
-
+# paths = [
+#     "best_model_9e59cf21-59ed-4afd-bfd1-eca01db3054b.pth",  # 1
+#     "best_model_055f8b0c-55ef-416e-8647-d590f36df813.pth",  # 2
+#     "best_model_849d1d6d-b968-459f-971a-81b522deb1ec.pth",  # 3
+#     "best_model_4f0a6d5c-82fc-40b3-8352-a5d8449425bc.pth",  # 4
+#     "best_model_c65738af-1683-46ff-bcbb-551cb10ca2d0.pth",  # 5
+#     "best_model_17ba2d78-55d2-4306-9a9c-314c096a099a.pth",  # 6
+#     "best_model_bc8487ea-da2f-4abe-9830-f9cbae95e0a1.pth",  # 7
+#     "best_model_a2333010-d211-408c-bafa-738c855daf30.pth",  # 8
+#     "best_model_cd69bbea-88f2-4223-9651-589db3cab61c.pth",  # 9
+#     "best_model_6a56b77f-4d6b-4218-9e5d-5735e59ba4d3.pth"   # 10
+# ]
 
 paths = [
-    "best_model_9e59cf21-59ed-4afd-bfd1-eca01db3054b.pth",  # 1
-    "best_model_055f8b0c-55ef-416e-8647-d590f36df813.pth",  # 2
-    "best_model_849d1d6d-b968-459f-971a-81b522deb1ec.pth",  # 3
-    "best_model_4f0a6d5c-82fc-40b3-8352-a5d8449425bc.pth",  # 4
-    "best_model_c65738af-1683-46ff-bcbb-551cb10ca2d0.pth",  # 5
-    "best_model_17ba2d78-55d2-4306-9a9c-314c096a099a.pth",  # 6
-    "best_model_bc8487ea-da2f-4abe-9830-f9cbae95e0a1.pth",  # 7
-    "best_model_a2333010-d211-408c-bafa-738c855daf30.pth",  # 8
-    "best_model_cd69bbea-88f2-4223-9651-589db3cab61c.pth",  # 9
-    "best_model_6a56b77f-4d6b-4218-9e5d-5735e59ba4d3.pth"   # 10
+    "best_model_2ac9be11-cdb3-4c9e-ba0b-d9f5d2ce1ffa.pth",  # 1
+    "best_model_cda91d49-fea9-48fc-b286-8114a1ed2fdf.pth",  # 2
+    "best_model_333520f1-f991-4441-9c86-133d257d5f88.pth",  # 3
+    "best_model_86f2cf62-ee7e-4350-9abf-a96e86eaf37e.pth",  # 4
+    "best_model_a42ca83a-01ed-43b6-a0a6-f6d9b5aa161f.pth",  # 5
+    "best_model_71da9539-db96-471f-9ac0-b852f01c2bb5.pth",  # 6
+    "best_model_9e5e77e8-49b5-4ea7-8a08-21435bbf55ac.pth",  # 7
+    "best_model_1cf73c94-0279-4604-96a9-31b86fe290ff.pth",  # 8
+    "best_model_745a871f-447e-4865-b9cb-bc4712b671ab.pth",  # 9
+    "best_model_92601926-7666-4642-80fc-a9787b4157d8.pth"   # 10
 ]
 
 for i, path in enumerate(paths):
@@ -237,7 +234,7 @@ for i, path in enumerate(paths):
                 combined_output[final_output == 1] = 2
                 combined_output[(mask == 1) & (final_output == 1)] = 3
 
-                output_dir = os.path.join("inference_output", f"patient_{id}")
+                output_dir = os.path.join("inference_output_last", f"patient_{id}")
                 os.makedirs(output_dir, exist_ok=True)
 
                 mask = mask.squeeze(0)
