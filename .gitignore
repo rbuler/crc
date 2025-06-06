@@ -5,4 +5,5 @@ best_model.pth
 unetr_pp
 .venv
 inference_output
+.vscode
 inference_output_last
