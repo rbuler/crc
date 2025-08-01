@@ -4,16 +4,16 @@ import torch
 import logging
 import numpy as np
 import pandas as pd
-import torch.nn as nn
+# import torch.nn as nn
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn import linear_model
-from torch.utils.data import DataLoader
-from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
+# from torch.utils.data import DataLoader
+from sklearn.model_selection import StratifiedKFold #, StratifiedShuffleSplit
 from sklearn.preprocessing import StandardScaler
-from network import MILNetwork, train_net, test_net
-from reduce_dim_features import icc_select_reproducible
-from reduce_dim_features import select_best_from_clusters
+# from x_code_detection_etc.network import MILNetwork, train_net, test_net
+from x_code_detection_etc.reduce_dim_features import icc_select_reproducible
+from x_code_detection_etc.reduce_dim_features import select_best_from_clusters
 from dataset import CRCDataset
 from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
 from sklearn.linear_model import LogisticRegression
@@ -22,7 +22,7 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 
-from utils import generate_mil_bags, summarize_bags
+# from utils import generate_mil_bags, summarize_bags
 
 
 logger = logging.getLogger(__name__)

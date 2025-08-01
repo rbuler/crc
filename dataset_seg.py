@@ -1,9 +1,9 @@
 import os
-import re
 import torch
 import random
 import logging
 import numpy as np
+import pandas as pd
 import nibabel as nib
 import torch.nn.functional as F
 from torch.utils.data import Dataset
@@ -14,8 +14,7 @@ logger = logging.getLogger(__name__)
 
 class CRCDataset_seg(Dataset):
     def __init__(self, root_dir: os.PathLike,
-                 nii_dir: os.PathLike,
-                 clinical_data_dir: os.PathLike,
+                 df: pd.DataFrame,
                  config,
                  transforms=None,
                  patch_size: tuple = (64, 64, 64),
@@ -24,68 +23,23 @@ class CRCDataset_seg(Dataset):
                  mode = '3d'):  
                          
         self.root = root_dir
-        self.nii_dir = nii_dir
-        self.clinical_data = clinical_data_dir
+        self.df = df
 
         self.patch_size = patch_size
         self.stride = stride
         self.num_patches_per_sample = num_patches_per_sample
         self.images_path = []
-        self.masks_path = []
-        self.instance_masks_path = []
-        self.mapping_path = []
-        
-        self.cut_images_path = []
-        self.cut_filtered_image_path = []
-        self.cut_filtered_bodyMask = []
-        self.cut_mask_path = []
         self.transforms = transforms
         self.train_mode = False
         self.mode = mode
 
-        nii_pth = os.path.join(self.root, self.nii_dir)
-
-        pattern = re.compile(r'^\d+a$') # take only those ##a
-        for root, dirs, files in os.walk(nii_pth, topdown=False):
-            for name in files:
-                f = os.path.join(root, name)
-                folder_name = f.split('/')[-2]
-                if not pattern.match(folder_name):
-                    logger.info(f"Skipping {folder_name}. Pattern does not match. {pattern}")
-                    continue
-                if 'labels.nii.gz' in f:
-                    self.masks_path.append(f)
-                elif 'labels_cut.nii.gz' in f:
-                    self.cut_mask_path.append(f)
-                elif '_cut.nii.gz' in f:
-                    self.cut_images_path.append(f)
-                elif '_body.nii.gz' in f:
-                    self.cut_filtered_image_path.append(f)
-                elif 'cut_filterMask.nii.gz' in f:
-                    self.cut_filtered_bodyMask.append(f)
-                elif 'instance_mask.nii.gz' in f:
-                    self.instance_masks_path.append(f)
-                elif 'nii.gz' in f:
-                    self.images_path.append(f)
-                elif 'mapping.pkl' in f:
-                    self.mapping_path.append(f)
-
+        self.images_path = df['images_path'].values
+        self.cut_filtered_images_path = df['cut_filtered_image_path'].values
+        self.cut_mask_path = df['cut_mask_path'].values if 'cut_mask_path' in df.columns else None
+        self.cut_filtered_bodyMask_path = df['cut_filtered_bodyMask_path'].values
 
 
     def __getitem__(self, idx):
-        cut = True
-        filtered = True
-        if not cut:
-            image_path = self.images_path[idx]
-            mask_path = self.masks_path[idx]
-        else:
-            if filtered:
-                image_path = self.cut_filtered_image_path[idx]
-                body_mask_path = self.cut_filtered_bodyMask[idx]
-            else:
-                image_path = self.cut_images_path[idx]
-            mask_path = self.cut_mask_path[idx]
-        
         id = self.get_patient_id(idx).strip("'")
         
         # load original image for original spacing
@@ -95,9 +49,13 @@ class CRCDataset_seg(Dataset):
         target_spacing = (1.0, 1.0, 1.5)
 
         # load images
-        image_nib = nib.load(image_path)
-        mask_nib = nib.load(mask_path)
-        body_mask_nib = nib.load(body_mask_path)
+        image_nib = nib.load(self.cut_filtered_images_path[idx])
+        # load masks, if not available, make it full empty with image shape
+        if self.cut_mask_path is None:
+            mask_nib = nib.Nifti1Image(np.zeros(image_nib.shape), affine=image_nib.affine)
+        else:
+            mask_nib = nib.load(self.cut_mask_path[idx])
+        body_mask_nib = nib.load(self.cut_filtered_bodyMask_path[idx])
 
         # convert to tensors
         image = torch.from_numpy(np.asarray(image_nib.dataobj))

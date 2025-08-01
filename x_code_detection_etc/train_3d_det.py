@@ -1,5 +1,17 @@
 # %%
-import os, sys, uuid, gc, re, glob, time, json, copy, warnings, yaml, logging, neptune
+import os
+import sys
+import uuid
+import gc
+import re
+import glob
+import time
+import json
+import copy
+import warnings
+import yaml
+import logging
+import neptune
 import numpy as np
 import torch
 import torch.optim as optim
@@ -8,14 +20,14 @@ from monai.utils import set_determinism
 from monai.transforms import ScaleIntensityRanged
 from monai.data import DataLoader, Dataset
 from monai.data.box_utils import box_iou 
-from monai.losses import FocalLoss
+# from monai.losses import FocalLoss
 from monai.apps.detection.utils.anchor_utils import AnchorGenerator
 from sklearn.model_selection import train_test_split
 
-from generate_transforms import generate_detection_train_transform, generate_detection_val_transform
-from my_tests import check_masks_inside_boxes
-from det_model import retinanet_resnet_fpn_detector
-from dataset import CRCDataset
+from x_code_detection_etc.generate_transforms import generate_detection_train_transform, generate_detection_val_transform
+# from my_tests import check_masks_inside_boxes
+from x_code_detection_etc.det_model import retinanet_resnet_fpn_detector
+from x_code_detection_etc.dataset import CRCDataset
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.INFO)

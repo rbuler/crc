@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from dataset import CRCDataset
 from sklearn import linear_model
 from sklearn.preprocessing import StandardScaler
-from reduce_dim_features import icc_select_reproducible, plot_reduced_dim, select_best_from_clusters
+from x_code_detection_etc.reduce_dim_features import icc_select_reproducible, plot_reduced_dim, select_best_from_clusters
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

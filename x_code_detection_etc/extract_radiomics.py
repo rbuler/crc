@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 import utils
-from RadiomicsExtractor import RadiomicsExtractor
+from x_code_detection_etc.RadiomicsExtractor import RadiomicsExtractor
 from warnings import simplefilter
 simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 

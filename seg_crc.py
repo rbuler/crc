@@ -10,6 +10,7 @@ import random
 import neptune
 import logging
 import numpy as np
+import pandas as pd
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from sklearn.model_selection import KFold
@@ -30,7 +31,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 # MAKE PARSER AND LOAD PARAMS FROM CONFIG FILE--------------------------------
 parser = utils.get_args_parser('config.yml')
-parser.add_argument("--fold", type=int, default=None)
+# parser.add_argument("--fold", type=int, default=None)
 args, unknown = parser.parse_known_args()
 with open(args.config_path) as file:
     config = yaml.load(file, Loader=yaml.FullLoader)
@@ -136,8 +137,6 @@ class LossFn:
             return (dicece + focal)
 
 
-
-
 def get_optimizer(optimizer_name, model_params, lr, weight_decay):
     if optimizer_name == "adam":
         return optim.Adam(model_params, lr=lr, weight_decay=weight_decay)
@@ -172,46 +171,59 @@ val_transforms = mt.Compose([
 ])
 
 transforms = [train_transforms, val_transforms]
+# %% 
+# load df
+df_path_u = os.path.join(root, config['dir']['processed'], 'unhealthy_df.pkl')
+df_path_h = os.path.join(root, config['dir']['processed'], 'healthy_df.pkl')
 # %%
-dataset = CRCDataset_seg(root_dir=root,
-                         nii_dir=config['dir']['nii_images'],
-                         clinical_data_dir=config['dir']['clinical_data'],
+df_u = pd.read_pickle(df_path_u)
+df_h = pd.read_pickle(df_path_h)
+# %%
+stair_step_artifact_ids = [1, 19, 98]
+slice_thickness_ids = [97, 128, 137]  # slice thickness > 5mm
+colon_blockage_ids = [64, 77, 173]
+explicit_ids_test = [31, 32, 47, 54, 78, 109, 73, 197, 204] # > tx t0
+# drop specific ids
+df_u = df_u[~df_u['id'].astype(int).isin(stair_step_artifact_ids + slice_thickness_ids + colon_blockage_ids)]
+df_u_explicit_test = df_u[df_u['id'].astype(int).isin(explicit_ids_test)]
+df_u = df_u[~df_u['id'].astype(int).isin(explicit_ids_test)]
+# %%
+dataset_u = CRCDataset_seg(root_dir=root,
+                         df=df_u,
                          config=config,
                          transforms=transforms,
                          patch_size=patch_size,
                          stride=stride,
                          num_patches_per_sample=100,
                          mode=mode)
-
-ids = []
-for i in range(len(dataset)):
-    ids.append(int(dataset.get_patient_id(i)))
-                              # bad res <         5mm          > tx t0
-explicit_ids_test = [1, 19, 98, 64, 77, 173,  97, 128, 137,    31, 32, 47, 54, 78, 109, 73, 197, 204]
-# explicit_ids_test = [1, 21, 57, 4, 40, 138, 17, 102, 180, 6, 199, 46, 59,  31, 32, 47, 54, 73, 78, 109, 197, 204]
-
-
-ids_train_val_test = list(set(ids) - set(explicit_ids_test))
-
-
+dataset_h = CRCDataset_seg(root_dir=root,
+                            df=df_h,
+                            config=config,
+                            transforms=transforms,
+                            patch_size=patch_size,
+                            stride=stride,
+                            num_patches_per_sample=100,
+                            mode=mode)
+# %%
+ids_train_val = dataset_u.df['id'].astype(int).unique().tolist()
 SPLITS = 10
 if run:
     run['train/splits'] = SPLITS
 
 kf = KFold(n_splits=SPLITS, shuffle=True, random_state=seed)
-folds = list(kf.split(ids_train_val_test))
+folds = list(kf.split(ids_train_val))
 
 for fold_idx, (train_idx, val_idx) in enumerate(folds):
     if fold_idx + 1 != fold:
         continue
 
-    train_ids = [ids_train_val_test[i] for i in train_idx]
-    val_ids = [ids_train_val_test[i] for i in val_idx]
-    test_ids = explicit_ids_test
+    train_ids = [ids_train_val[i] for i in train_idx]
+    val_ids = [ids_train_val[i] for i in val_idx]
+    test_ids = dataset_h.df['id'].astype(int).unique().tolist()
 
-    train_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in train_ids])
-    val_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in val_ids])
-    test_dataset = torch.utils.data.Subset(dataset, [i for i in range(len(dataset)) if int(dataset.get_patient_id(i)) in test_ids])
+    train_dataset = torch.utils.data.Subset(dataset_u, [i for i in range(len(dataset_u)) if int(dataset_u.get_patient_id(i)) in train_ids])
+    val_dataset = torch.utils.data.Subset(dataset_u, [i for i in range(len(dataset_u)) if int(dataset_u.get_patient_id(i)) in val_ids])
+    test_dataset = dataset_h
 
 if run:
     run["dataset/train_size"] = len(train_dataset)
@@ -228,20 +240,7 @@ if mode == '2d':
         return list(image_patches), list(mask_patches), list(images), list(masks), list(ids)
 elif mode == '3d':
     collate_fn = None
-
-
-
-# hard_cases = []
-# weights = []
-# for pid in train_ids:
-#     if pid in hard_cases:
-#         weights.append(5.0)
-#     else:
-#         weights.append(1.0)
-# sampler = torch.utils.data.WeightedRandomSampler(weights, len(weights), replacement=True)
-# train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=num_workers, collate_fn=collate_fn, sampler=sampler)
 # %%
-
 train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_fn)
 val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
