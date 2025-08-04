@@ -97,10 +97,8 @@ class CRCDataset_seg(Dataset):
             num_foreground = sum(1 for p in patches if torch.sum(p[1] > 0) > min_voxel_threshold)
             if num_foreground == 0:
                 num_to_select = 36
-                num_to_select = 4
             else:
                 num_to_select = min(36, num_foreground * 2)
-                num_to_select = 4
 
             selected_patches = self.select_patches(patches, num_to_select)
             img_patch = torch.stack([p[0] for p in selected_patches])
