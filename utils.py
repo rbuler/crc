@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 from ipywidgets import interact, IntSlider
 import matplotlib.patches as patches
 from monai.metrics import DiceMetric, MeanIoU
-
+from scipy.ndimage import label
+from medpy.metric.binary import hd95, assd
 
 def find_unique_value_mapping(mask1, mask2) -> dict:
     """
@@ -339,7 +340,35 @@ def interactive_slice_viewer(data, axis=2, label=None):
 
 
 
+def compute_false_positive_metrics(pred_labels, voxel_spacing=(1.0, 1.0, 1.0), min_volume_mm3=10.0):
+    voxel_volume = np.prod(voxel_spacing)
+    pred_binary = (pred_labels == 1).cpu().numpy()
+
+    labeled_array, num_features = label(pred_binary)
+    kept_mask = np.zeros_like(pred_binary)
+
+    cluster_volumes = []
+    for i in range(1, num_features + 1):
+        cluster = (labeled_array == i)
+        volume = np.sum(cluster) * voxel_volume
+        if volume >= min_volume_mm3:
+            kept_mask[cluster] = 1
+            cluster_volumes.append(volume)
+
+    fpv = np.sum(kept_mask) * voxel_volume
+    fpr = 1.0 if np.sum(kept_mask) > 0 else 0.0
+    fpcv = np.mean(cluster_volumes) if cluster_volumes else 0.0
+    return {
+        "FPV": fpv,
+        "FPR": fpr,
+        "FPCV": fpcv
+    }
+
+
 def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5):
+    
+    target_spacing = (1.0, 1.0, 1.5)
+    
     pred_probs = torch.sigmoid(pred_logits) if num_classes == 1 else torch.softmax(pred_logits, dim=1)
     pred_labels = torch.argmax(pred_probs, dim=1) if num_classes > 1 else (pred_probs > prob_thresh).long()
 
@@ -370,23 +399,42 @@ def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5
 
         dice_metric.reset()
         mean_iou_metric.reset()
+
+        pred_np = valid_pred_labels.cpu().numpy().astype(np.bool_)
+        true_np = valid_true_masks.cpu().numpy().astype(np.bool_)
+
+        try:
+            hd95_score = hd95(pred_np, true_np, voxelspacing=target_spacing)
+        except Exception:
+            hd95_score = float("nan")
+
+        try:
+            assd_score = assd(pred_np, true_np, voxelspacing=target_spacing)
+        except Exception:
+            assd_score = float("nan")
+
         tp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 1)).item()
         fp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 0)).item()
         fn = torch.sum((valid_pred_labels == 0) & (valid_true_masks == 1)).item()
 
-        tpr = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
 
         return {
-            "IoU": mean_iou,
             "Dice": mean_dice,
-            "TPR": tpr,
+            "IoU": mean_iou,
+            "HD95": hd95_score,
+            "ASSD": assd_score,
+            "TPR": recall,
             "Precision": precision,
         }
     else:
+        
+        fp_metrics = compute_false_positive_metrics(pred_labels, voxel_spacing=target_spacing)
         return {
             "IoU": 0.0,
             "Dice": 0.0,
             "TPR": 0.0,
             "Precision": 0.0,
+            **fp_metrics  # Unpack FPV, FPR, FPCV
         }
