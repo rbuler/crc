@@ -92,7 +92,7 @@ for result in results:
 
     nifti_mask = nib.load(result["mask_path"])
     orientation = nib.aff2axcodes(nifti_mask.affine)
-    logger.info(f"Image orientation: {orientation}")
+    logger.info(f"Mask orientation: {orientation}")
     mask = nifti_mask.get_fdata()
     mask = np.squeeze(mask) if len(mask.shape) == 4 else mask
     mask = mask[:, :, :-result['slice_index_to_cut']]
@@ -144,7 +144,7 @@ for root, dirs, files in os.walk(healthy_people_path, topdown=False):
 # 73a and 86a are missing
 healthy_people_df = pd.DataFrame(healthy_people_data).sort_values(by='id', key=lambda x: x.astype(int)).reset_index(drop=True)
 paths_h = config['dir']['processed_images_h']
-results = process_images(healthy_people_df['path'].values, None, window_size=10)
+results = process_images(healthy_people_df['images_path'].values, None, window_size=10)
 
 for result in results:
     nifti_image = nib.load(result["image_path"])
