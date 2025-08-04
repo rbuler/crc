@@ -180,9 +180,11 @@ def convert_dicom_to_nii(healthy_people_path, output_base_path):
             dicom_files.sort(key=get_sort_key)
 
             slices = [pydicom.dcmread(dcm_fp) for dcm_fp in dicom_files]
-            pixel_arrays = [s.pixel_array for s in slices]
+            pixel_arrays = [
+                s.pixel_array * float(s.RescaleSlope) + float(s.RescaleIntercept)
+                for s in slices
+            ]
             volume = np.stack(pixel_arrays, axis=-1)
-
             spacing = (float(slices[0].PixelSpacing[0]), float(slices[0].PixelSpacing[1]), float(slices[0].SliceThickness))
             affine = np.diag(spacing + (1.0,))  # 4x4 affine matrix
 
