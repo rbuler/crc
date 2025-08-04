@@ -223,7 +223,8 @@ for fold_idx, (train_idx, val_idx) in enumerate(folds):
 
     train_dataset = torch.utils.data.Subset(dataset_u, [i for i in range(len(dataset_u)) if int(dataset_u.get_patient_id(i)) in train_ids])
     val_dataset = torch.utils.data.Subset(dataset_u, [i for i in range(len(dataset_u)) if int(dataset_u.get_patient_id(i)) in val_ids])
-    test_dataset = dataset_h
+    test_dataset = torch.utils.data.Subset(dataset_h, range(len(dataset_h)))
+    # test_dataset = dataset_h
 
 if run:
     run["dataset/train_size"] = len(train_dataset)
