@@ -25,14 +25,14 @@ class CRCDataset_seg(Dataset):
         self.root = root_dir
         self.df = df
 
+        self.transforms = transforms
         self.patch_size = patch_size
         self.stride = stride
         self.num_patches_per_sample = num_patches_per_sample
-        self.images_path = []
-        self.transforms = transforms
-        self.train_mode = False
         self.mode = mode
+        self.train_mode = False
 
+        self.images_path = []
         self.images_path = df['images_path'].values
         self.cut_filtered_images_path = df['cut_filtered_image_path'].values
         self.cut_mask_path = df['cut_mask_path'].values if 'cut_mask_path' in df.columns else None
@@ -44,18 +44,16 @@ class CRCDataset_seg(Dataset):
         
         # load original image for original spacing
         original_image_nib = nib.load(self.images_path[idx])
-        # extract spacing info
         image_spacing = original_image_nib.header.get_zooms()[:3]  # assumes z, y, x order
         target_spacing = (1.0, 1.0, 1.5)
 
         # load images
         image_nib = nib.load(self.cut_filtered_images_path[idx])
-        # load masks, if not available, make it full empty with image shape
+        body_mask_nib = nib.load(self.cut_filtered_bodyMask_path[idx])
         if self.cut_mask_path is None:
             mask_nib = nib.Nifti1Image(np.zeros(image_nib.shape), affine=image_nib.affine)
         else:
             mask_nib = nib.load(self.cut_mask_path[idx])
-        body_mask_nib = nib.load(self.cut_filtered_bodyMask_path[idx])
 
         # convert to tensors
         image = torch.from_numpy(np.asarray(image_nib.dataobj))
@@ -79,11 +77,12 @@ class CRCDataset_seg(Dataset):
                                              window_width=window_width)
 
         # # assign 0 values to mask > 1
-        mask[mask == 2] = 0
-        mask[mask == 3] = 0
-        mask[mask == 4] = 0
-        mask[mask == 5] = 0
-        mask[mask == 6] = 0
+                                    # "colon_positive": 1,
+        mask[mask == 2] = 0         # "lymph_node_positive": 2,
+        mask[mask == 3] = 0         # "suspicious_fat": 3,
+        mask[mask == 4] = 0         # "colon_negative": 4,
+        mask[mask == 5] = 0         # "lymph_node_negative": 5,
+        mask[mask == 6] = 0         # "unsuspicious_fat": 6
 
 
         # temporary cuz model requires patch of shape (64 128 128)
@@ -97,29 +96,32 @@ class CRCDataset_seg(Dataset):
             num_foreground = sum(1 for p in patches if torch.any(p[1] > 0))
             if num_foreground == 0:
                 num_to_select = 36
+                num_to_select = 4
             else:
                 num_to_select = min(36, num_foreground * 2)
+                num_to_select = 4
 
             selected_patches = self.select_patches(patches, num_to_select)
             img_patch = torch.stack([p[0] for p in selected_patches])
             mask_patch = torch.stack([p[1] for p in selected_patches])
             
-            if (self.transforms is not None) and self.train_mode:
-                transformed = [
-                    self.transforms[0]({"image": img.unsqueeze(0), "mask": msk.unsqueeze(0)})
-                    for img, msk in zip(img_patch, mask_patch)
-                ]
-                img_patch = torch.stack([t["image"].squeeze(0) for t in transformed])
-                mask_patch = torch.stack([t["mask"].squeeze(0) for t in transformed])
+            if self.train_mode:
+                if self.transforms is not None:
+                    transformed = [
+                        self.transforms[0]({"image": img.unsqueeze(0), "mask": msk.unsqueeze(0)})
+                        for img, msk in zip(img_patch, mask_patch)
+                    ]
+                    img_patch = torch.stack([t["image"].squeeze(0) for t in transformed])
+                    mask_patch = torch.stack([t["mask"].squeeze(0) for t in transformed])
                 return img_patch, mask_patch, torch.zeros(1), torch.zeros(1), id
-            
-            elif (self.transforms is not None) and not self.train_mode:
-                transformed = [
-                    self.transforms[1]({"image": img.unsqueeze(0), "mask": msk.unsqueeze(0)})
-                    for img, msk in zip(img_patch, mask_patch)
-                ]
-                img_patch = torch.stack([t["image"].squeeze(0) for t in transformed])
-                mask_patch = torch.stack([t["mask"].squeeze(0) for t in transformed])
+            else:
+                if self.transforms is not None:
+                    transformed = [
+                        self.transforms[1]({"image": img.unsqueeze(0), "mask": msk.unsqueeze(0)})
+                        for img, msk in zip(img_patch, mask_patch)
+                    ]
+                    img_patch = torch.stack([t["image"].squeeze(0) for t in transformed])
+                    mask_patch = torch.stack([t["mask"].squeeze(0) for t in transformed])
                 mask = {"mask": mask, "body_mask": body_mask}
                 return img_patch, mask_patch, image, mask, id
         
