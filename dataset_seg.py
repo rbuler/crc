@@ -285,7 +285,6 @@ class CRCDataset_seg(Dataset):
         min_voxel_threshold = 100
         foreground = [p for p in patches if torch.sum(p[1] > 0) > min_voxel_threshold]
         background = [p for p in patches if torch.sum(p[1] > 0) <= min_voxel_threshold]
-        print(f"Foreground patches: {len(foreground)}, Background patches: {len(background)}")
         num_to_select = min(num_to_select, len(patches))
         
         if not foreground:
