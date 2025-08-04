@@ -26,6 +26,8 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         total_dice = 0
         total_tpr = 0
         total_precision = 0
+        total_hd95 = 0
+        total_assd = 0
         num_batches = len(train_dataloader)
 
         for img_patch, mask_patch, image, mask, _ in train_dataloader:
@@ -48,6 +50,8 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
             total_dice += metrics["Dice"]
             total_tpr += metrics["TPR"]
             total_precision += metrics["Precision"]
+            total_hd95 += metrics["HD95"] if not torch.isnan(torch.tensor(metrics["HD95"])) else 0
+            total_assd += metrics["ASSD"] if not torch.isnan(torch.tensor(metrics["ASSD"])) else 0
             loss.backward()
             optimizer.step()
 
@@ -56,6 +60,12 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         avg_dice = total_dice / num_batches
         avg_tpr = total_tpr / num_batches
         avg_precision = total_precision / num_batches
+        avg_hd95 = total_hd95 / num_batches if total_hd95 > 0 else float('nan')
+        avg_assd = total_assd / num_batches if total_assd > 0 else float('nan')
+
+        # Compute additional metrics (HD95 and ASSD)
+        avg_hd95 = total_hd95 / num_batches if 'total_hd95' in locals() else 0
+        avg_assd = total_assd / num_batches if 'total_assd' in locals() else 0
 
         if run:
             run["train/loss"].log(avg_loss)
@@ -63,6 +73,8 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
             run["train/Dice"].log(avg_dice)
             run["train/TPR"].log(avg_tpr)
             run["train/Precision"].log(avg_precision)
+            run["train/HD95"].log(avg_hd95)
+            run["train/ASSD"].log(avg_assd)
 
         model.eval()
         val_dataloader.dataset.dataset.set_mode(train_mode=False)
@@ -71,8 +83,10 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         val_dice = 0
         val_tpr = 0
         val_precision = 0
+        val_hd95 = 0
+        val_assd = 0
         num_val_batches = len(val_dataloader)
-    
+        
         current_patient_metrics = {}
         with torch.no_grad():
             for img_patch, mask_patch, image, mask, id in val_dataloader:
@@ -94,19 +108,23 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
 
                 metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=0.5)
                 criterion = criterion.to(device=logits.device)
-                loss = criterion(logits,  targets)
+                loss = criterion(logits, targets)
                 val_loss += loss.detach().item()
                 val_iou += metrics["IoU"]
                 val_dice += metrics["Dice"]
                 val_tpr += metrics["TPR"]
                 val_precision += metrics["Precision"]
+                val_hd95 += metrics["HD95"] if not torch.isnan(torch.tensor(metrics["HD95"])) else 0
+                val_assd += metrics["ASSD"] if not torch.isnan(torch.tensor(metrics["ASSD"])) else 0
 
                 current_patient_metrics[str(id[0])] = {
                     "Loss": loss.item(),
                     "IoU": metrics["IoU"],
                     "Dice": metrics["Dice"],
                     "TPR": metrics["TPR"],
-                    "Precision": metrics["Precision"]
+                    "Precision": metrics["Precision"],
+                    "HD95": metrics["HD95"] if not torch.isnan(torch.tensor(metrics["HD95"])) else float('nan'),
+                    "ASSD": metrics["ASSD"] if not torch.isnan(torch.tensor(metrics["ASSD"])) else float('nan')
                 }
 
         avg_val_loss = val_loss / num_val_batches
@@ -114,6 +132,8 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         avg_val_dice = val_dice / num_val_batches
         avg_val_tpr = val_tpr / num_val_batches
         avg_val_precision = val_precision / num_val_batches
+        avg_val_hd95 = val_hd95 / num_val_batches if val_hd95 > 0 else float('nan')
+        avg_val_assd = val_assd / num_val_batches if val_assd > 0 else float('nan')
 
         if run:
             run["val/loss"].log(avg_val_loss)
@@ -121,21 +141,25 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
             run["val/Dice"].log(avg_val_dice)
             run["val/TPR"].log(avg_val_tpr)
             run["val/Precision"].log(avg_val_precision)
+            run["val/HD95"].log(avg_val_hd95)
+            run["val/ASSD"].log(avg_val_assd)
 
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            best_val_metrics = {"IoU": avg_val_iou, "Dice": avg_val_dice}
+            best_val_metrics = {"IoU": avg_val_iou, "Dice": avg_val_dice, "HD95": avg_val_hd95, "ASSD": avg_val_assd}
             best_patient_metrics = current_patient_metrics.copy()
 
             if run:
                 run["val/best_val_metrics/IoU"] = best_val_metrics['IoU']
                 run["val/best_val_metrics/Dice"] = best_val_metrics['Dice']
+                run["val/best_val_metrics/HD95"] = best_val_metrics['HD95']
+                run["val/best_val_metrics/ASSD"] = best_val_metrics['ASSD']
 
             best_model = copy.deepcopy(model.state_dict())
             early_stopping_counter = 0
         else:
             early_stopping_counter += 1
-    
+        
         if run:
             run["val/patience_counter"] = early_stopping_counter
 
@@ -150,27 +174,30 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         print(f"Epoch [{epoch+1}/{num_epochs}], "
           f"Train Loss: {avg_loss:.4f}, Train IoU: {avg_iou:.4f}, Train Dice: {avg_dice:.4f}, "
           f"Val Loss: {avg_val_loss:.4f}, Val IoU: {avg_val_iou:.4f}, Val Dice: {avg_val_dice:.4f}, "
-          f"Time: {epoch_time_hms}")
+          f"Val HD95: {avg_val_hd95:.4f}, Val ASSD: {avg_val_assd:.4f}, Time: {epoch_time_hms}")
 
-    print(f"Saved best model with Val Loss: {best_val_loss:.4f}, Val IoU: {best_val_metrics['IoU']:.4f}, Val Dice: {best_val_metrics['Dice']:.4f}")
-    torch.save(best_model, best_model_path)
-    
-    print("\nBest Patient-wise Metrics (when Val Loss was lowest):")
-    for patient_id, metrics in best_patient_metrics.items():
-        print(
-            f"Patient_ID: {patient_id:<10} | "
-            f"Loss: {metrics['Loss']:.4f} | "
-            f"IoU: {metrics['IoU']:.3f} | "
-            f"Dice: {metrics['Dice']:.3f} | "
-            f"TPR: {metrics['TPR']:.3f} | "
-            f"Precision: {metrics['Precision']:.3f}"
-        )
+        print(f"Saved best model with Val Loss: {best_val_loss:.4f}, Val IoU: {best_val_metrics['IoU']:.4f}, "
+          f"Val Dice: {best_val_metrics['Dice']:.4f}, Val HD95: {best_val_metrics['HD95']:.4f}, "
+          f"Val ASSD: {best_val_metrics['ASSD']:.4f}")
+        torch.save(best_model, best_model_path)
+        
+        print("\nBest Patient-wise Metrics (when Val Loss was lowest):")
+        for patient_id, metrics in best_patient_metrics.items():
+            print(
+                f"Patient_ID: {patient_id:<10} | "
+                f"Loss: {metrics['Loss']:.4f} | "
+                f"IoU: {metrics['IoU']:.3f} | "
+                f"Dice: {metrics['Dice']:.3f} | "
+                f"TPR: {metrics['TPR']:.3f} | "
+                f"Precision: {metrics['Precision']:.3f} | "
+                f"HD95: {metrics['HD95']:.3f} | "
+                f"ASSD: {metrics['ASSD']:.3f}"
+            )
 
+        if run:
+            run["model_filename"] = best_model_path
 
-    if run:
-        run["model_filename"] = best_model_path
-
-    return best_model_path
+        return best_model_path
 
 
 
@@ -183,6 +210,9 @@ def test_net(mode, model, best_model_path, test_dataloader, device, num_classes=
 
     total_iou = 0
     total_dice = 0
+    total_fpv = 0
+    total_fpr = 0
+    total_fpcv = 0
     num_samples = len(test_dataloader)
     probs = 0.5
 
@@ -210,12 +240,24 @@ def test_net(mode, model, best_model_path, test_dataloader, device, num_classes=
             
             total_iou += metrics["IoU"]
             total_dice += metrics["Dice"]
+            total_fpv += metrics["FPV"]
+            total_fpr += metrics["FPR"]
+            total_fpcv += metrics["FPCV"]
+
 
     avg_iou = total_iou / num_samples
     avg_dice = total_dice / num_samples
+    avg_fpv = total_fpv / num_samples
+    avg_fpr = total_fpr / num_samples
+    avg_fpcv = total_fpcv / num_samples
+
 
     if run:
         run["test/avg_IoU"] = avg_iou
         run["test/avg_Dice"] = avg_dice
+        run["test/avg_FPV"] = avg_fpv
+        run["test/avg_FPR"] = avg_fpr
+        run["test/avg_FPCV"] = avg_fpcv
 
-    print(f"Average IoU: {avg_iou:.4f}, Average Dice: {avg_dice:.4f}")
+    print(f"Average IoU: {avg_iou:.4f}, Average Dice: {avg_dice:.4f}, Average FPV: {avg_fpv:.4f}, "
+          f"Average FPR: {avg_fpr:.4f}, Average FPCV: {avg_fpcv:.4f}")
