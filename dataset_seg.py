@@ -10,7 +10,7 @@ from torch.utils.data import Dataset
 
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.INFO)
 
 class CRCDataset_seg(Dataset):
     def __init__(self, root_dir: os.PathLike,
@@ -93,7 +93,8 @@ class CRCDataset_seg(Dataset):
         if self.mode == '3d':
 
             patches = self.extract_patches(image, mask, body_mask)
-            num_foreground = sum(1 for p in patches if torch.any(p[1] > 0))
+            min_voxel_threshold = 100
+            num_foreground = sum(1 for p in patches if torch.sum(p[1] > 0) > min_voxel_threshold)
             if num_foreground == 0:
                 num_to_select = 36
                 num_to_select = 4
@@ -282,8 +283,11 @@ class CRCDataset_seg(Dataset):
 
     def select_patches(self, patches, num_to_select):
         """Balanced patch selection with randomness"""
-        foreground = [p for p in patches if torch.any(p[1] > 0)]
-        background = [p for p in patches if not torch.any(p[1] > 0)]
+
+        min_voxel_threshold = 100
+        foreground = [p for p in patches if torch.sum(p[1] > 0) > min_voxel_threshold]
+        background = [p for p in patches if torch.sum(p[1] > 0) <= min_voxel_threshold]
+        print(f"Foreground patches: {len(foreground)}, Background patches: {len(background)}")
         num_to_select = min(num_to_select, len(patches))
         
         if not foreground:
