@@ -427,9 +427,5 @@ def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5
         
         fp_metrics = compute_false_positive_metrics(pred_labels, voxel_spacing=target_spacing)
         return {
-            "IoU": 0.0,
-            "Dice": 0.0,
-            "TPR": 0.0,
-            "Precision": 0.0,
-            **fp_metrics  # Unpack FPV, FPR, FPCV
+            **fp_metrics
         }
