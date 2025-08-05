@@ -208,24 +208,20 @@ def test_net(mode, model, best_model_path, test_dataloader, device, num_classes=
     model = model.to(device)
     model.eval()
 
-    total_iou = 0
-    total_dice = 0
-    total_fpv = 0
-    total_fpr = 0
-    total_fpcv = 0
+    totals = None
     num_samples = len(test_dataloader)
     probs = 0.5
 
     with torch.no_grad():
         test_dataloader.dataset.dataset.set_mode(train_mode=False)
         for i, (_, _, image, mask, _) in enumerate(test_dataloader):
-            if mode ==  '2d':
+            if mode == '2d':
                 inputs = image.to(device, dtype=torch.float32)
                 targets = mask.to(device, dtype=torch.long)
                 inputs = inputs.permute(1, 0, 2, 3)
                 targets = targets.permute(1, 0, 2, 3)
                 logits = model(inputs)
-            elif mode =='3d':
+            elif mode == '3d':
                 inputs = image.to(device, dtype=torch.float32)
                 targets = mask['mask'].to(device, dtype=torch.long)
                 body_mask = mask["body_mask"].to(torch.device('cpu'), dtype=torch.long)
@@ -237,27 +233,17 @@ def test_net(mode, model, best_model_path, test_dataloader, device, num_classes=
                 logits[body_mask == 0] = -1e10
 
             metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
-            
-            total_iou += metrics["IoU"]
-            total_dice += metrics["Dice"]
-            total_fpv += metrics["FPV"]
-            total_fpr += metrics["FPR"]
-            total_fpcv += metrics["FPCV"]
 
+            if totals is None:
+                totals = {key: 0 for key in metrics.keys()}
+            for key, value in metrics.items():
+                totals[key] += value
 
-    avg_iou = total_iou / num_samples
-    avg_dice = total_dice / num_samples
-    avg_fpv = total_fpv / num_samples
-    avg_fpr = total_fpr / num_samples
-    avg_fpcv = total_fpcv / num_samples
-
+    averages = {key: total / num_samples for key, total in totals.items()}
+    avg_metrics_str = ", ".join([f"Average {key}: {avg:.4f}" for key, avg in averages.items()])
 
     if run:
-        run["test/avg_IoU"] = avg_iou
-        run["test/avg_Dice"] = avg_dice
-        run["test/avg_FPV"] = avg_fpv
-        run["test/avg_FPR"] = avg_fpr
-        run["test/avg_FPCV"] = avg_fpcv
+        for key, avg in averages.items():
+            run[f"test/avg_{key}"] = avg
 
-    print(f"Average IoU: {avg_iou:.4f}, Average Dice: {avg_dice:.4f}, Average FPV: {avg_fpv:.4f}, "
-          f"Average FPR: {avg_fpr:.4f}, Average FPCV: {avg_fpcv:.4f}")
+    print(avg_metrics_str)
