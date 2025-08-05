@@ -367,8 +367,9 @@ def compute_false_positive_metrics(pred_labels, voxel_spacing=(1.0, 1.0, 1.0), m
 
 def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5):
     
-    target_spacing = (1.0, 1.0, 1.5)
-    
+    # target_spacing = (1.0, 1.0, 1.5)
+    target_spacing = (1.5, 1.0, 1.0) # transpose in dataset
+
     pred_probs = torch.sigmoid(pred_logits) if num_classes == 1 else torch.softmax(pred_logits, dim=1)
     pred_labels = torch.argmax(pred_probs, dim=1) if num_classes > 1 else (pred_probs > prob_thresh).long()
 
@@ -402,16 +403,10 @@ def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5
 
         pred_np = valid_pred_labels.cpu().numpy().astype(np.bool_)
         true_np = valid_true_masks.cpu().numpy().astype(np.bool_)
-
-        try:
-            hd95_score = hd95(pred_np, true_np, voxelspacing=target_spacing)
-        except Exception:
-            hd95_score = float("nan")
-
-        try:
-            assd_score = assd(pred_np, true_np, voxelspacing=target_spacing)
-        except Exception:
-            assd_score = float("nan")
+        pred_np_squeezed = pred_np.squeeze(0).squeeze(0)
+        true_np_squeezed = true_np.squeeze(0).squeeze(0)
+        hd95_score = hd95(pred_np_squeezed, true_np_squeezed, voxelspacing=target_spacing)
+        assd_score = assd(pred_np_squeezed, true_np_squeezed, voxelspacing=target_spacing)
 
         tp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 1)).item()
         fp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 0)).item()
