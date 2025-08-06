@@ -403,10 +403,28 @@ def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5
 
         pred_np = valid_pred_labels.cpu().numpy().astype(np.bool_)
         true_np = valid_true_masks.cpu().numpy().astype(np.bool_)
-        pred_np_squeezed = pred_np.squeeze(0).squeeze(0)
-        true_np_squeezed = true_np.squeeze(0).squeeze(0)
-        hd95_score = hd95(pred_np_squeezed, true_np_squeezed, voxelspacing=target_spacing)
-        assd_score = assd(pred_np_squeezed, true_np_squeezed, voxelspacing=target_spacing)
+        hd95_scores = []
+        assd_scores = []
+
+        for i in range(pred_np.shape[0]):
+            pred_i = pred_np[i, 0]  # squeeze channel dimension assumed to be 1
+            true_i = true_np[i, 0]
+
+            try:
+                hd = hd95(pred_i, true_i, voxelspacing=target_spacing)
+            except Exception:
+                hd = float("nan")
+
+            try:
+                assd_val = assd(pred_i, true_i, voxelspacing=target_spacing)
+            except Exception:
+                assd_val = float("nan")
+
+            hd95_scores.append(hd)
+            assd_scores.append(assd_val)
+
+        hd95_score = np.nanmean(hd95_scores)
+        assd_score = np.nanmean(assd_scores)
 
         tp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 1)).item()
         fp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 0)).item()
