@@ -22,12 +22,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         model.train()
         train_dataloader.dataset.dataset.set_mode(train_mode=True)
         total_loss = 0
-        total_iou = 0
-        total_dice = 0
-        total_tpr = 0
-        total_precision = 0
-        total_hd95 = 0
-        total_assd = 0
+        totals = None
         num_batches = len(train_dataloader)
 
         for img_patch, mask_patch, image, mask, _ in train_dataloader:
@@ -46,45 +41,25 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
             loss = criterion(logits, targets)
             metrics = evaluate_segmentation(logits, targets, num_classes=num_classes)
             total_loss += loss.detach().item()
-            total_iou += metrics["IoU"]
-            total_dice += metrics["Dice"]
-            total_tpr += metrics["TPR"]
-            total_precision += metrics["Precision"]
-            total_hd95 += metrics["HD95"] if not torch.isnan(torch.tensor(metrics["HD95"])) else 0
-            total_assd += metrics["ASSD"] if not torch.isnan(torch.tensor(metrics["ASSD"])) else 0
+            if totals is None:
+                totals = {key: 0 for key in metrics.keys()}
+                for key, value in metrics.items():
+                    totals[key] += value
             loss.backward()
             optimizer.step()
 
         avg_loss = total_loss / num_batches
-        avg_iou = total_iou / num_batches
-        avg_dice = total_dice / num_batches
-        avg_tpr = total_tpr / num_batches
-        avg_precision = total_precision / num_batches
-        avg_hd95 = total_hd95 / num_batches if total_hd95 > 0 else float('nan')
-        avg_assd = total_assd / num_batches if total_assd > 0 else float('nan')
-
-        # Compute additional metrics (HD95 and ASSD)
-        avg_hd95 = total_hd95 / num_batches if 'total_hd95' in locals() else 0
-        avg_assd = total_assd / num_batches if 'total_assd' in locals() else 0
+        averages = {key: total / num_batches for key, total in totals.items()}
 
         if run:
             run["train/loss"].log(avg_loss)
-            run["train/IoU"].log(avg_iou)
-            run["train/Dice"].log(avg_dice)
-            run["train/TPR"].log(avg_tpr)
-            run["train/Precision"].log(avg_precision)
-            run["train/HD95"].log(avg_hd95)
-            run["train/ASSD"].log(avg_assd)
+            for key, avg in averages.items():
+                run[f"train/avg_{key}"] = avg
 
         model.eval()
         val_dataloader.dataset.dataset.set_mode(train_mode=False)
         val_loss = 0
-        val_iou = 0
-        val_dice = 0
-        val_tpr = 0
-        val_precision = 0
-        val_hd95 = 0
-        val_assd = 0
+        val_totals = None
         num_val_batches = len(val_dataloader)
         
         current_patient_metrics = {}
@@ -110,12 +85,10 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                 criterion = criterion.to(device=logits.device)
                 loss = criterion(logits, targets)
                 val_loss += loss.detach().item()
-                val_iou += metrics["IoU"]
-                val_dice += metrics["Dice"]
-                val_tpr += metrics["TPR"]
-                val_precision += metrics["Precision"]
-                val_hd95 += metrics["HD95"] if not torch.isnan(torch.tensor(metrics["HD95"])) else 0
-                val_assd += metrics["ASSD"] if not torch.isnan(torch.tensor(metrics["ASSD"])) else 0
+                if val_totals is None:
+                    val_totals = {key: 0 for key in metrics.keys()}
+                for key, value in metrics.items():
+                    val_totals[key] += value
 
                 current_patient_metrics[str(id[0])] = {
                     "Loss": loss.item(),
@@ -128,25 +101,16 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                 }
 
         avg_val_loss = val_loss / num_val_batches
-        avg_val_iou = val_iou / num_val_batches
-        avg_val_dice = val_dice / num_val_batches
-        avg_val_tpr = val_tpr / num_val_batches
-        avg_val_precision = val_precision / num_val_batches
-        avg_val_hd95 = val_hd95 / num_val_batches if val_hd95 > 0 else float('nan')
-        avg_val_assd = val_assd / num_val_batches if val_assd > 0 else float('nan')
+        val_averages = {key: total / num_batches for key, total in totals.items()}
 
         if run:
             run["val/loss"].log(avg_val_loss)
-            run["val/IoU"].log(avg_val_iou)
-            run["val/Dice"].log(avg_val_dice)
-            run["val/TPR"].log(avg_val_tpr)
-            run["val/Precision"].log(avg_val_precision)
-            run["val/HD95"].log(avg_val_hd95)
-            run["val/ASSD"].log(avg_val_assd)
+            for key, avg in val_averages.items():
+                run[f"val/avg_{key}"] = avg
 
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            best_val_metrics = {"IoU": avg_val_iou, "Dice": avg_val_dice, "HD95": avg_val_hd95, "ASSD": avg_val_assd}
+            best_val_metrics = [metric for metric in val_averages if metric in ["IoU", "Dice", "HD95", "ASSD"]]
             best_patient_metrics = current_patient_metrics.copy()
 
             if run:
@@ -171,33 +135,33 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         epoch_time = end_time - start_time
 
         epoch_time_hms = time.strftime("%H:%M:%S", time.gmtime(epoch_time))
-        print(f"Epoch [{epoch+1}/{num_epochs}], "
-          f"Train Loss: {avg_loss:.4f}, Train IoU: {avg_iou:.4f}, Train Dice: {avg_dice:.4f}, "
-          f"Val Loss: {avg_val_loss:.4f}, Val IoU: {avg_val_iou:.4f}, Val Dice: {avg_val_dice:.4f}, "
-          f"Val HD95: {avg_val_hd95:.4f}, Val ASSD: {avg_val_assd:.4f}, Time: {epoch_time_hms}")
+        metrics_str = f"Train Loss: {avg_loss:.4f} | Train IoU: {averages['IoU']:.4f} | Train Dice: {averages['Dice']:.4f} | " \
+                  f"Val Loss: {avg_val_loss:.4f} | Val IoU: {val_averages['IoU']:.4f} | Val Dice: {val_averages['Dice']:.4f} | " \
+                  f"Val HD95: {val_averages['HD95']:.4f} | Val ASSD: {val_averages['ASSD']:.4f} | Epoch Time: {epoch_time_hms}"
+        print(f"Epoch [{epoch+1}/{num_epochs}] | {metrics_str}")
 
-        print(f"Saved best model with Val Loss: {best_val_loss:.4f}, Val IoU: {best_val_metrics['IoU']:.4f}, "
-          f"Val Dice: {best_val_metrics['Dice']:.4f}, Val HD95: {best_val_metrics['HD95']:.4f}, "
-          f"Val ASSD: {best_val_metrics['ASSD']:.4f}")
-        torch.save(best_model, best_model_path)
-        
-        print("\nBest Patient-wise Metrics (when Val Loss was lowest):")
-        for patient_id, metrics in best_patient_metrics.items():
-            print(
-                f"Patient_ID: {patient_id:<10} | "
-                f"Loss: {metrics['Loss']:.4f} | "
-                f"IoU: {metrics['IoU']:.3f} | "
-                f"Dice: {metrics['Dice']:.3f} | "
-                f"TPR: {metrics['TPR']:.3f} | "
-                f"Precision: {metrics['Precision']:.3f} | "
-                f"HD95: {metrics['HD95']:.3f} | "
-                f"ASSD: {metrics['ASSD']:.3f}"
-            )
+    print(f"Saved best model with Val Loss: {best_val_loss:.4f}, Val IoU: {best_val_metrics['IoU']:.4f}, "
+        f"Val Dice: {best_val_metrics['Dice']:.4f}, Val HD95: {best_val_metrics['HD95']:.4f}, "
+        f"Val ASSD: {best_val_metrics['ASSD']:.4f}")
+    torch.save(best_model, best_model_path)
+    
+    print("\nBest Patient-wise Metrics (when Val Loss was lowest):")
+    for patient_id, metric in best_patient_metrics.items():
+        print(
+            f"Patient_ID: {patient_id:<10} | "
+            f"Loss: {metric['Loss']:.4f} | "
+            f"IoU: {metric['IoU']:.3f} | "
+            f"Dice: {metric['Dice']:.3f} | "
+            f"TPR: {metric['TPR']:.3f} | "
+            f"Precision: {metric['Precision']:.3f} | "
+            f"HD95: {metric['HD95']:.3f} | "
+            f"ASSD: {metric['ASSD']:.3f}"
+        )
 
-        if run:
-            run["model_filename"] = best_model_path
+    if run:
+        run["model_filename"] = best_model_path
 
-        return best_model_path
+    return best_model_path
 
 
 
