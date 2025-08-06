@@ -164,9 +164,9 @@ def get_3d_bounding_boxes(segmentation, mapping_path):
             continue
 
         bounding_box = [*min_coords, *max_coords]
-        label = int(instance_to_class[instance])
+        label_ = int(instance_to_class[instance])
         bounding_boxes.append(bounding_box)
-        labels.append(label)
+        labels.append(label_)
 
     return {'boxes': np.stack(bounding_boxes), 'labels': np.stack(labels)}
 
@@ -259,7 +259,7 @@ def get_2d_bounding_boxes(segmentation, mapping_path, plane='xy'):
     return bounding_boxes_per_slice
 
 
-def interactive_slice_viewer(data, axis=2, label=None):
+def interactive_slice_viewer(data, axis=2, label_=None):
     """
     IPython interactive viewer for 3D medical images with masks and bounding boxes.
 
@@ -269,7 +269,7 @@ def interactive_slice_viewer(data, axis=2, label=None):
     """
     # Extract data
     image = data['image'].squeeze(0).numpy()  # (224, 224, 64)
-    if label:
+    if label_:
         mask = data['mask'].squeeze(0).numpy() == label
     else:
         mask = data['mask'].squeeze(0).numpy()    # (224, 224, 64)
@@ -341,28 +341,46 @@ def interactive_slice_viewer(data, axis=2, label=None):
 
 
 def compute_false_positive_metrics(pred_labels, voxel_spacing=(1.0, 1.0, 1.0), min_volume_mm3=10.0):
+    pred_binary = (pred_labels == 1).cpu().numpy().astype(np.uint8)
+    filtered_mask = filter_small_components(pred_binary, min_volume_mm3=min_volume_mm3)
     voxel_volume = np.prod(voxel_spacing)
-    pred_binary = (pred_labels == 1).cpu().numpy()
-
-    labeled_array, num_features = label(pred_binary)
-    kept_mask = np.zeros_like(pred_binary)
-
     cluster_volumes = []
-    for i in range(1, num_features + 1):
+
+    labeled_array, num_components = label(filtered_mask)
+    for i in range(1, num_components + 1):
         cluster = (labeled_array == i)
         volume = np.sum(cluster) * voxel_volume
-        if volume >= min_volume_mm3:
-            kept_mask[cluster] = 1
-            cluster_volumes.append(volume)
+        cluster_volumes.append(volume)
 
-    fpv = np.sum(kept_mask) * voxel_volume
-    fpr = 1.0 if np.sum(kept_mask) > 0 else 0.0
+    fpv = np.sum(filtered_mask) * voxel_volume
+    fpr = 1.0 if np.sum(filtered_mask) > 0 else 0.0
     fpcv = np.mean(cluster_volumes) if cluster_volumes else 0.0
+
     return {
         "FPV": fpv,
         "FPR": fpr,
         "FPCV": fpcv
     }
+
+
+def keep_largest_connected_component(binary_mask):
+    labeled_array, num_features = label(binary_mask)
+    if num_features == 0:
+        return binary_mask  # empty mask, return as is
+    largest_cc = (labeled_array == np.argmax(np.bincount(labeled_array.flat)[1:]) + 1)
+    return largest_cc.astype(np.bool_)
+
+def filter_small_components(binary_mask, voxel_spacing=(1.0, 1.0, 1.5), min_volume_mm3=10.0):
+    voxel_volume = np.prod(voxel_spacing)
+    labeled_array, num_features = label(binary_mask)
+    kept_mask = np.zeros_like(binary_mask)
+
+    for i in range(1, num_features + 1):
+        region = (labeled_array == i)
+        volume = region.sum() * voxel_volume
+        if volume >= min_volume_mm3:
+            kept_mask[region] = 1
+    return kept_mask.astype(np.bool_)
 
 
 def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5):
@@ -407,8 +425,10 @@ def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5
         assd_scores = []
 
         for i in range(pred_np.shape[0]):
-            pred_i = pred_np[i, 0]  # squeeze channel dimension assumed to be 1
-            true_i = true_np[i, 0]
+            pred_i = filter_small_components(pred_np[i, 0], voxel_spacing=target_spacing)
+            true_i = filter_small_components(true_np[i, 0], voxel_spacing=target_spacing)
+            pred_i = keep_largest_connected_component(pred_i)
+            true_i = keep_largest_connected_component(true_i)
 
             try:
                 hd = hd95(pred_i, true_i, voxelspacing=target_spacing)
