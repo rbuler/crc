@@ -100,20 +100,22 @@ def process_images(image_paths, mask_paths=None, window_size=10):
         # bone_slices_sum = np.sum(bone_mask, axis=(0, 1))[::-1]
 
         lung_means = [np.mean(lung_slices_sum[i:i + window_size]) for i in range(0, len(lung_slices_sum), window_size)]
-        half_length = len(lung_means) // 2
+        # half_length = len(lung_means) // 2
 
         max_descend = 0
         max_descend_index = 0
-        for i in range(1, half_length):
+        global_max_index = np.argmax(lung_means)
+
+        for i in range(global_max_index + 1, len(lung_means)):
             descend = lung_means[i - 1] - lung_means[i]
             if descend > max_descend:
                 max_descend = descend
                 max_descend_index = i
-            if max_descend_index == 0:
-                max_descend_index = i
+        if max_descend_index == 0:
+                max_descend_index = len(lung_means) - 1
 
         lung_end_index = max_descend_index * window_size
-
+        
         """
         TODO - Implement a more robust method to find the end of the lung region.
         AND also implement a method to find the start of the bone (lower pelvis) region.
@@ -138,7 +140,7 @@ def process_images(image_paths, mask_paths=None, window_size=10):
                 slice_indexes_to_cut = min(lung_end_index, np.argmax(mask_slices_sum > 0) - 10)
             else:
                 slice_indexes_to_cut = min(lung_end_index + window_size, np.argmax(mask_slices_sum > 0) - 5) # index for each patient
-        print(lung_end_index)
+        print(slice_indexes_to_cut)
 
         results.append({
             "image_path": image_path,
