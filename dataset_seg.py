@@ -91,10 +91,12 @@ class CRCDataset_seg(Dataset):
         body_mask = body_mask.permute(2, 0, 1)
 
         if self.mode == '3d':
+
             if self.train_mode:
                 patches = self.extract_patches(image, mask, body_mask)
                 min_voxel_threshold = 100
                 num_foreground = sum(1 for p in patches if torch.sum(p[1] > 0) > min_voxel_threshold)
+
                 if num_foreground == 0:
                     num_to_select = 36
                 else:
@@ -104,7 +106,6 @@ class CRCDataset_seg(Dataset):
                 img_patch = torch.stack([p[0] for p in selected_patches])
                 mask_patch = torch.stack([p[1] for p in selected_patches])
             
-            if self.train_mode:
                 if self.transforms is not None:
                     transformed = [
                         self.transforms[0]({"image": img.unsqueeze(0), "mask": msk.unsqueeze(0)})
@@ -116,7 +117,7 @@ class CRCDataset_seg(Dataset):
             else:
                 mask = {"mask": mask, "body_mask": body_mask}
                 if self.transforms is not None:
-                    transformed = self.transforms[1]({"image": image.unsqueeze(0), "mask": mask})
+                    transformed = self.transforms[1]({"image": image, "mask": mask})
                     image, mask = transformed["image"], transformed["mask"]
                 return torch.zeros(1), torch.zeros(1), image, mask, id
         
@@ -166,6 +167,9 @@ class CRCDataset_seg(Dataset):
 
     def set_mode(self, train_mode):
         self.train_mode = train_mode
+
+    def get_mode(self):
+        return self.train_mode
 
 
     def get_patient_id(self, idx):
