@@ -54,7 +54,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         if run:
             run["train/loss"].log(avg_loss)
             for key, avg in averages.items():
-                run[f"train/avg_{key}"] = avg
+                run[f"train/avg_{key}"].log(avg)
 
         model.eval()
         val_dataloader.dataset.dataset.set_mode(train_mode=False)
@@ -80,7 +80,6 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                     body_mask = body_mask.unsqueeze(0)
                     logits = inferer(inputs=inputs, network=model)
                     logits[body_mask == 0] = -1e10
-
                 metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=0.5)
                 criterion = criterion.to(device=logits.device)
                 loss = criterion(logits, targets)
@@ -89,17 +88,13 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                     val_totals = {key: 0 for key in metrics.keys()}
                 for key, value in metrics.items():
                     val_totals[key] += value
-
                 current_patient_metrics[str(id[0])] = {
                     "Loss": loss.item(),
                     "IoU": metrics["IoU"],
                     "Dice": metrics["Dice"],
                     "TPR": metrics["TPR"],
                     "Precision": metrics["Precision"],
-                    "HD95": metrics["HD95"] if not torch.isnan(torch.tensor(metrics["HD95"])) else float('nan'),
-                    "ASSD": metrics["ASSD"] if not torch.isnan(torch.tensor(metrics["ASSD"])) else float('nan')
                 }
-
         avg_val_loss = val_loss / num_val_batches
         val_averages = {key: total / num_batches for key, total in totals.items()}
 
@@ -110,14 +105,12 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
 
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            best_val_metrics = [metric for metric in val_averages if metric in ["IoU", "Dice", "HD95", "ASSD"]]
+            best_val_metrics = {metric: val_averages[metric] for metric in ["IoU", "Dice"]}
             best_patient_metrics = current_patient_metrics.copy()
 
             if run:
                 run["val/best_val_metrics/IoU"] = best_val_metrics['IoU']
                 run["val/best_val_metrics/Dice"] = best_val_metrics['Dice']
-                run["val/best_val_metrics/HD95"] = best_val_metrics['HD95']
-                run["val/best_val_metrics/ASSD"] = best_val_metrics['ASSD']
 
             best_model = copy.deepcopy(model.state_dict())
             early_stopping_counter = 0
@@ -137,12 +130,11 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         epoch_time_hms = time.strftime("%H:%M:%S", time.gmtime(epoch_time))
         metrics_str = f"Train Loss: {avg_loss:.4f} | Train IoU: {averages['IoU']:.4f} | Train Dice: {averages['Dice']:.4f} | " \
                   f"Val Loss: {avg_val_loss:.4f} | Val IoU: {val_averages['IoU']:.4f} | Val Dice: {val_averages['Dice']:.4f} | " \
-                  f"Val HD95: {val_averages['HD95']:.4f} | Val ASSD: {val_averages['ASSD']:.4f} | Epoch Time: {epoch_time_hms}"
+                  f"Epoch Time: {epoch_time_hms}"
         print(f"Epoch [{epoch+1}/{num_epochs}] | {metrics_str}")
 
     print(f"Saved best model with Val Loss: {best_val_loss:.4f}, Val IoU: {best_val_metrics['IoU']:.4f}, "
-        f"Val Dice: {best_val_metrics['Dice']:.4f}, Val HD95: {best_val_metrics['HD95']:.4f}, "
-        f"Val ASSD: {best_val_metrics['ASSD']:.4f}")
+        f"Val Dice: {best_val_metrics['Dice']:.4f}")
     torch.save(best_model, best_model_path)
     
     print("\nBest Patient-wise Metrics (when Val Loss was lowest):")
@@ -154,8 +146,6 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
             f"Dice: {metric['Dice']:.3f} | "
             f"TPR: {metric['TPR']:.3f} | "
             f"Precision: {metric['Precision']:.3f} | "
-            f"HD95: {metric['HD95']:.3f} | "
-            f"ASSD: {metric['ASSD']:.3f}"
         )
 
     if run:
