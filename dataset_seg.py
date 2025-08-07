@@ -91,18 +91,18 @@ class CRCDataset_seg(Dataset):
         body_mask = body_mask.permute(2, 0, 1)
 
         if self.mode == '3d':
+            if self.train_mode:
+                patches = self.extract_patches(image, mask, body_mask)
+                min_voxel_threshold = 100
+                num_foreground = sum(1 for p in patches if torch.sum(p[1] > 0) > min_voxel_threshold)
+                if num_foreground == 0:
+                    num_to_select = 36
+                else:
+                    num_to_select = min(36, num_foreground * 2)
 
-            patches = self.extract_patches(image, mask, body_mask)
-            min_voxel_threshold = 100
-            num_foreground = sum(1 for p in patches if torch.sum(p[1] > 0) > min_voxel_threshold)
-            if num_foreground == 0:
-                num_to_select = 36
-            else:
-                num_to_select = min(36, num_foreground * 2)
-
-            selected_patches = self.select_patches(patches, num_to_select)
-            img_patch = torch.stack([p[0] for p in selected_patches])
-            mask_patch = torch.stack([p[1] for p in selected_patches])
+                selected_patches = self.select_patches(patches, num_to_select)
+                img_patch = torch.stack([p[0] for p in selected_patches])
+                mask_patch = torch.stack([p[1] for p in selected_patches])
             
             if self.train_mode:
                 if self.transforms is not None:
@@ -114,15 +114,11 @@ class CRCDataset_seg(Dataset):
                     mask_patch = torch.stack([t["mask"].squeeze(0) for t in transformed])
                 return img_patch, mask_patch, torch.zeros(1), torch.zeros(1), id
             else:
-                if self.transforms is not None:
-                    transformed = [
-                        self.transforms[1]({"image": img.unsqueeze(0), "mask": msk.unsqueeze(0)})
-                        for img, msk in zip(img_patch, mask_patch)
-                    ]
-                    img_patch = torch.stack([t["image"].squeeze(0) for t in transformed])
-                    mask_patch = torch.stack([t["mask"].squeeze(0) for t in transformed])
                 mask = {"mask": mask, "body_mask": body_mask}
-                return img_patch, mask_patch, image, mask, id
+                if self.transforms is not None:
+                    transformed = self.transforms[1]({"image": image.unsqueeze(0), "mask": mask})
+                    image, mask = transformed["image"], transformed["mask"]
+                return torch.zeros(1), torch.zeros(1), image, mask, id
         
         elif self.mode == '2d':
 
