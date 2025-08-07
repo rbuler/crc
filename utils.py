@@ -9,7 +9,7 @@ from ipywidgets import interact, IntSlider
 import matplotlib.patches as patches
 from monai.metrics import DiceMetric, MeanIoU
 from scipy.ndimage import label
-from medpy.metric.binary import hd95, assd
+# from medpy.metric.binary import hd95, assd
 
 def find_unique_value_mapping(mask1, mask2) -> dict:
     """
@@ -419,32 +419,32 @@ def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5
         dice_metric.reset()
         mean_iou_metric.reset()
 
-        pred_np = valid_pred_labels.cpu().numpy().astype(np.bool_)
-        true_np = valid_true_masks.cpu().numpy().astype(np.bool_)
-        hd95_scores = []
-        assd_scores = []
+        # pred_np = valid_pred_labels.cpu().numpy().astype(np.bool_)
+        # true_np = valid_true_masks.cpu().numpy().astype(np.bool_)
+        # hd95_scores = []
+        # assd_scores = []
 
-        for i in range(pred_np.shape[0]):
-            pred_i = filter_small_components(pred_np[i, 0], voxel_spacing=target_spacing)
-            true_i = filter_small_components(true_np[i, 0], voxel_spacing=target_spacing)
-            pred_i = keep_largest_connected_component(pred_i)
-            true_i = keep_largest_connected_component(true_i)
+        # for i in range(pred_np.shape[0]):
+        #     pred_i = filter_small_components(pred_np[i, 0], voxel_spacing=target_spacing)
+        #     true_i = filter_small_components(true_np[i, 0], voxel_spacing=target_spacing)
+        #     pred_i = keep_largest_connected_component(pred_i)
+        #     true_i = keep_largest_connected_component(true_i)
 
-            try:
-                hd = hd95(pred_i, true_i, voxelspacing=target_spacing)
-            except Exception:
-                hd = float("nan")
+        #     try:
+        #         hd = hd95(pred_i, true_i, voxelspacing=target_spacing)
+        #     except Exception:
+        #         hd = float("nan")
 
-            try:
-                assd_val = assd(pred_i, true_i, voxelspacing=target_spacing)
-            except Exception:
-                assd_val = float("nan")
+        #     try:
+        #         assd_val = assd(pred_i, true_i, voxelspacing=target_spacing)
+        #     except Exception:
+        #         assd_val = float("nan")
 
-            hd95_scores.append(hd)
-            assd_scores.append(assd_val)
+        #     hd95_scores.append(hd)
+        #     assd_scores.append(assd_val)
 
-        hd95_score = np.nanmean(hd95_scores)
-        assd_score = np.nanmean(assd_scores)
+        # hd95_score = np.nanmean(hd95_scores)
+        # assd_score = np.nanmean(assd_scores)
 
         tp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 1)).item()
         fp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 0)).item()
@@ -456,8 +456,8 @@ def evaluate_segmentation(pred_logits, true_mask, num_classes=7, prob_thresh=0.5
         return {
             "Dice": mean_dice,
             "IoU": mean_iou,
-            "HD95": hd95_score,
-            "ASSD": assd_score,
+            # "HD95": hd95_score,
+            # "ASSD": assd_score,
             "TPR": recall,
             "Precision": precision,
         }
