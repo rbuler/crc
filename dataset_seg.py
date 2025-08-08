@@ -107,12 +107,20 @@ class CRCDataset_seg(Dataset):
                 mask_patch = torch.stack([p[1] for p in selected_patches])
             
                 if self.transforms is not None:
-                    transformed = [
-                        self.transforms[0]({"image": img.unsqueeze(0), "mask": msk.unsqueeze(0)})
-                        for img, msk in zip(img_patch, mask_patch)
-                    ]
-                    img_patch = torch.stack([t["image"].squeeze(0) for t in transformed])
-                    mask_patch = torch.stack([t["mask"].squeeze(0) for t in transformed])
+                    # transformed = [
+                    #     self.transforms[0]({"image": img.unsqueeze(0), "mask": msk.unsqueeze(0)})
+                    #     for img, msk in zip(img_patch, mask_patch)
+                    # ]
+                    # img_patch = torch.stack([t["image"].squeeze(0) for t in transformed])
+                    # mask_patch = torch.stack([t["mask"].squeeze(0) for t in transformed])
+                    input_dict = {"image": img_patch, "mask": mask_patch}
+                    transformed = self.transforms[0](input_dict)
+
+                    img_patch = transformed["image"]
+                    mask_patch = transformed["mask"]
+                    if isinstance(img_patch, list):
+                        img_patch = torch.stack([t.squeeze(0) for t in img_patch])
+                        mask_patch = torch.stack([t.squeeze(0) for t in mask_patch])
                 return img_patch, mask_patch, torch.zeros(1), torch.zeros(1), id
             else:
                 mask = {"mask": mask, "body_mask": body_mask}
