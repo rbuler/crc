@@ -393,7 +393,7 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=7, prob_thres
         pred_probs = pred
     
     pred_labels = torch.argmax(pred_probs, dim=1) if num_classes > 1 else (pred_probs > prob_thresh).long()
-
+    pred_labels = pred_labels.unsqueeze(1)
 
     dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
     mean_iou_metric = MeanIoU(include_background=True, reduction="mean", get_not_nans=False)
