@@ -101,7 +101,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
         if run:
             run["val/loss"].log(avg_val_loss)
             for key, avg in val_averages.items():
-                run[f"val/avg_{key}"] = avg
+                run[f"val/avg_{key}"].log(avg)
 
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
