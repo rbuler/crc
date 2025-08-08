@@ -51,27 +51,44 @@ random.seed(seed)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+def enable_last_mc_dropout(model):
+    dropout3d_layers = [m for m in model.modules() if isinstance(m, nn.Dropout3d)]
+    
+    if dropout3d_layers:
+        # Set only the last Dropout3d layer to train mode
+        dropout3d_layers[-1].train()
+
 def enable_mc_dropout(model):
-    for m in model.modules():
-        if isinstance(m, nn.Dropout3d):
-            m.train()
+    dropout3d_layers = [m for m in model.modules() if isinstance(m, nn.Dropout3d)]
+    
+    for layer in dropout3d_layers:
+        layer.train()
 
 @torch.no_grad()
 def mc_forward(model, inputs, inferer, T=20, body_mask=None):
     model.eval()
     enable_mc_dropout(model)
-    outputs = []
+    preds_list = []
+    metrics_list = []
 
     for _ in range(T):
         logits = inferer(inputs=inputs, network=model)
         if body_mask is not None:
             logits[body_mask == 0] = -1e10
-        outputs.append(torch.sigmoid(logits))
+        preds = torch.sigmoid(logits)
+        preds_list.append(preds)
+        metrics = evaluate_segmentation(preds, targets, num_classes=num_classes, prob_thresh=probs, logits_input=False)
+        metrics_list.append(metrics)
 
-    outputs = torch.stack(outputs, dim=0)
-    mean_pred = outputs.mean(dim=0)
-    std_pred = outputs.std(dim=0)
-    return mean_pred, std_pred
+    preds_stack = torch.stack(preds_list, dim=0)  # Shape: [T, B, C, H, W, D]
+    mean_pred = preds_stack.mean(dim=0)
+    std_pred = preds_stack.std(dim=0)
+
+    # Calculate mean and std for metrics
+    metrics_mean = {key: np.mean([m[key] for m in metrics_list]) for key in metrics_list[0].keys()}
+    metrics_std = {key: np.std([m[key] for m in metrics_list]) for key in metrics_list[0].keys()}
+
+    return mean_pred, std_pred, metrics_mean, metrics_std
 
 # %%
 train_transforms = mt.Compose([mt.ToTensord(keys=["image", "mask"])])
@@ -178,14 +195,11 @@ for i, path in enumerate(paths):
         model = model.to(device)
 
         # gaussian or not?
-        inferer = SlidingWindowInferer(
-            roi_size=tuple(patch_size), sw_batch_size=1, overlap=0.75, mode="constant", device=torch.device('cpu')
-        )
+        inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=36, overlap=0.75, mode="constant", device=torch.device('cpu'))
         model.eval()
-
-        total_iou, total_dice, total_tpr, total_precision = 0, 0, 0, 0
         probs = 0.5
 
+        
         dataloader = val_dataloader
         dataloader.dataset.dataset.set_mode(train_mode=False)
 
@@ -205,20 +219,23 @@ for i, path in enumerate(paths):
 
                 use_mc = False
                 if use_mc:
-                    mean_pred, std_pred = mc_forward(model, inputs, inferer, T=20, body_mask=body_mask)
-                    logits = mean_pred
+                    mean_pred, std_pred, metrics, metrics_std = mc_forward(model, inputs, inferer, T=50, body_mask=body_mask)
+                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items()])
+                    print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
+                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics_std.items()])
+                    print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
+                    final_output = mean_pred
+                    final_output = (final_output.squeeze(0) > 0.5).cpu().numpy().astype(np.uint8)
+                   
                 else:
                     logits = inferer(inputs=inputs, network=model)
                     logits[body_mask == 0] = -1e10
-                
-                metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
-                metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items()])
-                print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
+                    metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
+                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items()])
+                    print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
+                    final_output = torch.sigmoid(logits)
+                    final_output = (final_output.squeeze(0) > 0.5).cpu().numpy().astype(np.uint8)
 
-                final_output = torch.sigmoid(logits)
-                final_output = (final_output.squeeze(0) > 0.5).cpu().numpy().astype(np.uint8)
-                    
-                
                 mask = targets.squeeze(0).cpu().numpy().astype(np.uint8)
                 combined_output = np.zeros_like(mask)
                 combined_output[mask == 1] = 1
