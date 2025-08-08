@@ -383,7 +383,7 @@ def filter_small_components(binary_mask, voxel_spacing=(1.0, 1.0, 1.5), min_volu
     return kept_mask.astype(np.bool_)
 
 
-def evaluate_segmentation(pred, true_mask, num_classes=7, prob_thresh=0.5, logits_input=True):
+def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=7, prob_thresh=0.5, logits_input=True):
     
     # target_spacing = (1.0, 1.0, 1.5)
     target_spacing = (1.5, 1.0, 1.0) # transpose in dataset
@@ -423,32 +423,38 @@ def evaluate_segmentation(pred, true_mask, num_classes=7, prob_thresh=0.5, logit
         dice_metric.reset()
         mean_iou_metric.reset()
 
-        pred_np = valid_pred_labels.cpu().numpy().astype(np.bool_)
-        true_np = valid_true_masks.cpu().numpy().astype(np.bool_)
-        hd95_scores = []
-        assd_scores = []
 
-        for i in range(pred_np.shape[0]):
-            pred_i = filter_small_components(pred_np[i, 0], voxel_spacing=target_spacing)
-            true_i = filter_small_components(true_np[i, 0], voxel_spacing=target_spacing)
-            pred_i = keep_largest_connected_component(pred_i)
-            true_i = keep_largest_connected_component(true_i)
+        if epoch < 20:
+            hd95_score = 0.0
+            assd_score = 0.0
+        else:
 
-            try:
-                hd = hd95(pred_i, true_i, voxelspacing=target_spacing)
-            except Exception:
-                hd = float("nan")
+            pred_np = valid_pred_labels.cpu().numpy().astype(np.bool_)
+            true_np = valid_true_masks.cpu().numpy().astype(np.bool_)
+            hd95_scores = []
+            assd_scores = []
 
-            try:
-                assd_val = assd(pred_i, true_i, voxelspacing=target_spacing)
-            except Exception:
-                assd_val = float("nan")
+            for i in range(pred_np.shape[0]):
+                pred_i = filter_small_components(pred_np[i, 0], voxel_spacing=target_spacing)
+                true_i = filter_small_components(true_np[i, 0], voxel_spacing=target_spacing)
+                pred_i = keep_largest_connected_component(pred_i)
+                true_i = keep_largest_connected_component(true_i)
 
-            hd95_scores.append(hd)
-            assd_scores.append(assd_val)
+                try:
+                    hd = hd95(pred_i, true_i, voxelspacing=target_spacing)
+                except Exception:
+                    hd = float("nan")
 
-        hd95_score = np.nanmean(hd95_scores)
-        assd_score = np.nanmean(assd_scores)
+                try:
+                    assd_val = assd(pred_i, true_i, voxelspacing=target_spacing)
+                except Exception:
+                    assd_val = float("nan")
+
+                hd95_scores.append(hd)
+                assd_scores.append(assd_val)
+
+            hd95_score = np.nanmean(hd95_scores)
+            assd_score = np.nanmean(assd_scores)
 
         tp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 1)).item()
         fp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 0)).item()

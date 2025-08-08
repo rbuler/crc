@@ -39,7 +39,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
             logits = model(inputs)
             criterion = criterion.to(device=logits.device)
             loss = criterion(logits, targets)
-            metrics = evaluate_segmentation(logits, targets, num_classes=num_classes)
+            metrics = evaluate_segmentation(logits, targets, epoch)
             total_loss += loss.detach().item()
             if totals is None:
                 totals = {key: 0 for key in metrics.keys()}
@@ -80,7 +80,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                     body_mask = body_mask.unsqueeze(0)
                     logits = inferer(inputs=inputs, network=model)
                     logits[body_mask == 0] = -1e10
-                metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=0.5)
+                metrics = evaluate_segmentation(logits, targets, epoch)
                 criterion = criterion.to(device=logits.device)
                 loss = criterion(logits, targets)
                 val_loss += loss.detach().item()
