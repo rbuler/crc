@@ -393,7 +393,6 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=7, prob_thres
         pred_probs = pred
     
     pred_labels = torch.argmax(pred_probs, dim=1) if num_classes > 1 else (pred_probs > prob_thresh).long()
-    pred_labels = pred_labels.unsqueeze(1)
 
     dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
     mean_iou_metric = MeanIoU(include_background=True, reduction="mean", get_not_nans=False)
@@ -409,6 +408,7 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=7, prob_thres
     if valid_pred_labels:
         valid_pred_labels = torch.cat(valid_pred_labels, dim=0)
         valid_true_masks = torch.cat(valid_true_masks, dim=0)
+        valid_pred_labels = valid_pred_labels.unsqueeze(1) if valid_pred_labels.dim() == 4 else valid_pred_labels
 
         if valid_pred_labels.dim() == 5:  # 3D case B C H W D
             dice_metric(y_pred=valid_pred_labels, y=valid_true_masks)
@@ -424,9 +424,10 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=7, prob_thres
         mean_iou_metric.reset()
 
 
-        if epoch < 20:
-            hd95_score = 0.0
-            assd_score = 0.0
+        if epoch is not None:
+            if epoch < 20:
+                hd95_score = 0.0
+                assd_score = 0.0
         else:
 
             pred_np = valid_pred_labels.cpu().numpy().astype(np.bool_)
