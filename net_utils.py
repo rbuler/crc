@@ -96,7 +96,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                     "Precision": metrics["Precision"],
                 }
         avg_val_loss = val_loss / num_val_batches
-        val_averages = {key: total / num_batches for key, total in val_totals.items()}
+        val_averages = {key: total / num_val_batches for key, total in val_totals.items()}
 
         if run:
             run["val/loss"].log(avg_val_loss)
