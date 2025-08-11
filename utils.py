@@ -383,7 +383,7 @@ def filter_small_components(binary_mask, voxel_spacing=(1.0, 1.0, 1.5), min_volu
     return kept_mask.astype(np.bool_)
 
 
-def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=7, prob_thresh=0.5, logits_input=True):
+def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thresh=0.5, logits_input=True):
     
     # target_spacing = (1.0, 1.0, 1.5)
     target_spacing = (1.5, 1.0, 1.0) # transpose in dataset
@@ -424,8 +424,7 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=7, prob_thres
         mean_iou_metric.reset()
 
 
-        if epoch is not None:
-            if epoch < 20:
+        if epoch is not None and epoch < 20:
                 hd95_score = 0.0
                 assd_score = 0.0
         else:
@@ -479,5 +478,12 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=7, prob_thres
         
         fp_metrics = compute_false_positive_metrics(pred_labels, voxel_spacing=target_spacing)
         return {
+            "Dice": 0.,
+            "IoU": 0.,
+            "HD95": 0.,
+            "ASSD": 0.,
+            "FPR": 0.,
+            "TPR": 0.,
+            "Precision": 0.,
             **fp_metrics
         }
