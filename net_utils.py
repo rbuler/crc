@@ -10,7 +10,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
     val_dataloader = dataloaders[1]
     
     best_val_loss = float('inf')
-    best_val_metrics = {"IoU": 0, "Dice": 0}
+    best_val_metrics = {"IoU": 0., "Dice": 0.}
 
     best_model_path = os.path.join(root, "models", f"best_model_{uuid.uuid4()}.pth")
     early_stopping_counter = 0
@@ -42,9 +42,9 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
             metrics = evaluate_segmentation(logits, targets, epoch)
             total_loss += loss.detach().item()
             if totals is None:
-                totals = {key: 0 for key in metrics.keys()}
-                for key, value in metrics.items():
-                    totals[key] += value
+                totals = {key: 0. for key in metrics.keys()}
+            for key, value in metrics.items():
+                totals[key] += value
             loss.backward()
             optimizer.step()
 
@@ -85,7 +85,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                 loss = criterion(logits, targets)
                 val_loss += loss.detach().item()
                 if val_totals is None:
-                    val_totals = {key: 0 for key in metrics.keys()}
+                    val_totals = {key: 0. for key in metrics.keys()}
                 for key, value in metrics.items():
                     val_totals[key] += value
                 current_patient_metrics[str(id[0])] = {
@@ -189,7 +189,7 @@ def test_net(mode, model, best_model_path, test_dataloader, device, num_classes=
             metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
 
             if totals is None:
-                totals = {key: 0 for key in metrics.keys()}
+                totals = {key: 0. for key in metrics.keys()}
             for key, value in metrics.items():
                 totals[key] += value
 
