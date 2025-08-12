@@ -1,5 +1,6 @@
 # %%
 import os
+import re
 import sys
 import ast
 import json
@@ -13,7 +14,8 @@ import numpy as np
 import pandas as pd
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from sklearn.model_selection import KFold
+# from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedKFold
 
 import monai.transforms as mt
 from monai.losses import TverskyLoss, FocalLoss, DiceCELoss, DiceFocalLoss, DiceLoss
@@ -188,6 +190,30 @@ df_u = df_u[~df_u['id'].astype(int).isin(stair_step_artifact_ids + slice_thickne
 df_u_explicit_test = df_u[df_u['id'].astype(int).isin(explicit_ids_test)]
 df_u = df_u[~df_u['id'].astype(int).isin(explicit_ids_test)]
 # %%
+# load clinical data
+def extract_T(value):
+    if value is None:
+        return None
+    s = str(value).strip()
+    m = re.match(r"^(T\d)", s, flags=re.IGNORECASE)
+    if m:
+        return m.group(1)
+    print(f"Warning: Could not extract T from value '{value}'")
+    return None
+
+clinical_data_dir = os.path.join(root, config['dir']['clinical_data'])
+default_missing = pd._libs.parsers.STR_NA_VALUES
+clinical_data = pd.read_excel(
+            clinical_data_dir,
+            index_col=False,
+            na_filter=True,
+            na_values=default_missing)
+tnm_data = clinical_data.rename(columns={'TNM wg mnie': 'TNM', 'Nr pacjenta': 'id'})[['id', 'TNM']].dropna(subset=['id'])
+tnm_data = tnm_data[tnm_data['id'].astype(int).isin(df_u['id'].astype(int))]
+tnm_data["T_extracted"] = tnm_data["TNM"].apply(extract_T)
+most_frequent_T = tnm_data["T_extracted"].dropna().mode()[0]
+tnm_data["T_clean"] = tnm_data["T_extracted"].fillna(most_frequent_T)
+# %%
 dataset_u = CRCDataset_seg(root_dir=root,
                          df=df_u,
                          config=config,
@@ -207,11 +233,10 @@ dataset_h = CRCDataset_seg(root_dir=root,
 # %%
 ids_train_val = dataset_u.df['id'].astype(int).unique().tolist()
 SPLITS = 10
-if run:
-    run['train/splits'] = SPLITS
 
-kf = KFold(n_splits=SPLITS, shuffle=True, random_state=seed)
-folds = list(kf.split(ids_train_val))
+stratification_labels = tnm_data.set_index('id').reindex(ids_train_val)['T_clean'].values
+skf = StratifiedKFold(n_splits=SPLITS, shuffle=True, random_state=seed)
+folds = list(skf.split(ids_train_val, stratification_labels))
 
 for fold_idx, (train_idx, val_idx) in enumerate(folds):
     if fold_idx + 1 != fold:
@@ -225,8 +250,17 @@ for fold_idx, (train_idx, val_idx) in enumerate(folds):
     val_dataset = torch.utils.data.Subset(dataset_u, [i for i in range(len(dataset_u)) if int(dataset_u.get_patient_id(i)) in val_ids])
     test_dataset = torch.utils.data.Subset(dataset_h, range(len(dataset_h)))
     # test_dataset = dataset_h
+    t_stages_train = tnm_data[tnm_data['id'].astype(int).isin(train_ids)]['T_clean'].value_counts().to_dict()
+    t_stages_val = tnm_data[tnm_data['id'].astype(int).isin(val_ids)]['T_clean'].value_counts().to_dict()
+    t_stages_train_df = pd.DataFrame.from_dict(t_stages_train, orient='index', columns=['count']).reset_index()
+    t_stages_train_df.rename(columns={'index': 'T_stage'}, inplace=True)
+    t_stages_val_df = pd.DataFrame.from_dict(t_stages_val, orient='index', columns=['count']).reset_index()
+    t_stages_val_df.rename(columns={'index': 'T_stage'}, inplace=True)
+    t_stages_train_df.sort_values(by='T_stage', inplace=True)
+    t_stages_val_df.sort_values(by='T_stage', inplace=True)
 
 if run:
+    run['train/splits'] = SPLITS
     run["dataset/train_size"] = len(train_dataset)
     run["dataset/val_size"] = len(val_dataset)
     run["dataset/test_size"] = len(test_dataset)
@@ -234,6 +268,8 @@ if run:
     run["dataset/transformations"] = json.dumps(transform_list)
     run["dataset/val_ids"] = str(val_ids)
     run["dataset/test_ids"] = str(test_ids)
+    run["dataset/t_stages_train"] = t_stages_train_df.to_dict(orient='records')
+    run["dataset/t_stages_val"] = t_stages_val_df.to_dict(orient='records')
 
 if mode == '2d':
     def collate_fn(batch):
@@ -278,7 +314,7 @@ if mode == '3d':
     weights_path = os.path.join(root, "models", "model_final_checkpoint.model")
     checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
     model.load_state_dict(checkpoint['state_dict'], strict=False)
-    model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+    model.out1.conv.conv = torch.nn.Conv3d(16, num_classes, kernel_size=(1, 1, 1), stride=(1, 1, 1))
 
 model = model.to(device)
 
@@ -294,7 +330,7 @@ if run:
     run["train/optimizer"] = optimizer.__class__.__name__
 
 # %%
-inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=1, overlap=0.5, device=torch.device('cpu'))
+inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=36, overlap=0.75, device=torch.device('cpu'))
 best_model_path = train_net(mode, root, model, criterion, optimizer, dataloaders=[train_dataloader, val_dataloader],
                             num_epochs=num_epochs, patience=patience, device=device, run=run, inferer=inferer)
 test_net(mode, model, best_model_path, test_dataloader, device=device, run=run, inferer=inferer)
