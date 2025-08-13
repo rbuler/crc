@@ -184,9 +184,10 @@ df_h = pd.read_pickle(df_path_h)
 stair_step_artifact_ids = [1, 19, 98]
 slice_thickness_ids = [97, 128, 137]  # slice thickness > 5mm
 colon_blockage_ids = [64, 77, 173]
+rectal_cancer_ids = [76]
 explicit_ids_test = [31, 32, 47, 54, 78, 109, 73, 197, 204] # > tx t0
 # drop specific ids
-df_u = df_u[~df_u['id'].astype(int).isin(stair_step_artifact_ids + slice_thickness_ids + colon_blockage_ids)]
+df_u = df_u[~df_u['id'].astype(int).isin(stair_step_artifact_ids + slice_thickness_ids + colon_blockage_ids + rectal_cancer_ids)]
 df_u_explicit_test = df_u[df_u['id'].astype(int).isin(explicit_ids_test)]
 df_u = df_u[~df_u['id'].astype(int).isin(explicit_ids_test)]
 # %%
