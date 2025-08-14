@@ -33,7 +33,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 # MAKE PARSER AND LOAD PARAMS FROM CONFIG FILE--------------------------------
 parser = utils.get_args_parser('config.yml')
-# parser.add_argument("--fold", type=int, default=None)
+parser.add_argument("--fold", type=int, default=None)
 args, unknown = parser.parse_known_args()
 with open(args.config_path) as file:
     config = yaml.load(file, Loader=yaml.FullLoader)
@@ -57,7 +57,7 @@ if pos_weight == 'None':
     pos_weight = None
 loss_fn = config['training']['loss_fn']
 mode = config['training']['mode']
-
+patch_mode = config['training']['patch_mode']
 
 if config['neptune']:
     run = neptune.init_run(project="ProjektMMG/CRC")
@@ -222,7 +222,8 @@ dataset_u = CRCDataset_seg(root_dir=root,
                          patch_size=patch_size,
                          stride=stride,
                          num_patches_per_sample=100,
-                         mode=mode)
+                         mode=mode,
+                         patch_mode=patch_mode)
 dataset_h = CRCDataset_seg(root_dir=root,
                             df=df_h,
                             config=config,
@@ -230,7 +231,8 @@ dataset_h = CRCDataset_seg(root_dir=root,
                             patch_size=patch_size,
                             stride=stride,
                             num_patches_per_sample=100,
-                            mode=mode)
+                            mode=mode,
+                            patch_mode=patch_mode)
 # %%
 ids_train_val = dataset_u.df['id'].astype(int).unique().tolist()
 SPLITS = 10

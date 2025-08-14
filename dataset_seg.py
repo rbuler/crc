@@ -21,17 +21,18 @@ class CRCDataset_seg(Dataset):
                  patch_size: tuple = (64, 64, 64),
                  stride: int = 32,
                  num_patches_per_sample: int = 50,
-                 mode = '3d'):  
+                 mode = '3d',
+                 patch_mode='dict_transform'):  
                          
         self.root = root_dir
         self.df = df
-
         self.transforms = transforms
         self.patch_size = patch_size
         self.stride = stride
         self.num_patches_per_sample = num_patches_per_sample
         self.mode = mode
         self.train_mode = False
+        self.patch_mode = patch_mode
 
         self.images_path = []
         self.images_path = df['images_path'].values
@@ -108,8 +109,6 @@ class CRCDataset_seg(Dataset):
                 mask_patch = torch.stack([p[1] for p in selected_patches])
             
                 if self.transforms is not None:
-
-                    self.patch_mode = "dict_transform"
                     
                     if self.patch_mode == "loop_transform":
                         transformed = [
