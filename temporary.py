@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import ast
 import yaml
@@ -11,7 +12,9 @@ import pandas as pd
 import torch.nn as nn
 import nibabel as nib
 from torch.utils.data import DataLoader
-from sklearn.model_selection import KFold
+# from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedKFold
+
 
 import monai.transforms as mt
 from utils import evaluate_segmentation
@@ -41,6 +44,7 @@ batch_size = config['training']['batch_size']
 num_workers = config['training']['num_workers']
 num_classes = config['training']['num_classes']
 mode = config['training']['mode']
+patch_mode = config['training']['patch_mode']
 
 # SET FIXED SEED FOR REPRODUCIBILITY --------------------------------
 seed = config['seed']
@@ -106,11 +110,37 @@ df_h = pd.read_pickle(df_path_h)
 stair_step_artifact_ids = [1, 19, 98]
 slice_thickness_ids = [97, 128, 137]  # slice thickness > 5mm
 colon_blockage_ids = [64, 77, 173]
+rectal_cancer_ids = [76]
 explicit_ids_test = [31, 32, 47, 54, 78, 109, 73, 197, 204] # > tx t0
-df_u = df_u[~df_u['id'].astype(int).isin(stair_step_artifact_ids + slice_thickness_ids + colon_blockage_ids)]
+# drop specific ids
+df_u = df_u[~df_u['id'].astype(int).isin(stair_step_artifact_ids + slice_thickness_ids + colon_blockage_ids + rectal_cancer_ids)]
 df_u_explicit_test = df_u[df_u['id'].astype(int).isin(explicit_ids_test)]
-df_u = df_u[~df_u['id'].astype(int).isin(explicit_ids_test)].reset_index(drop=True)
+df_u = df_u[~df_u['id'].astype(int).isin(explicit_ids_test)]
+# %%
+# load clinical data
+def extract_T(value):
+    if value is None:
+        return None
+    s = str(value).strip()
+    m = re.match(r"^(T\d)", s, flags=re.IGNORECASE)
+    if m:
+        return m.group(1)
+    print(f"Warning: Could not extract T from value '{value}'")
+    return None
 
+clinical_data_dir = os.path.join(root, config['dir']['clinical_data'])
+default_missing = pd._libs.parsers.STR_NA_VALUES
+clinical_data = pd.read_excel(
+            clinical_data_dir,
+            index_col=False,
+            na_filter=True,
+            na_values=default_missing)
+tnm_data = clinical_data.rename(columns={'TNM wg mnie': 'TNM', 'Nr pacjenta': 'id'})[['id', 'TNM']].dropna(subset=['id'])
+tnm_data = tnm_data[tnm_data['id'].astype(int).isin(df_u['id'].astype(int))]
+tnm_data["T_extracted"] = tnm_data["TNM"].apply(extract_T)
+most_frequent_T = tnm_data["T_extracted"].dropna().mode()[0]
+tnm_data["T_clean"] = tnm_data["T_extracted"].fillna(most_frequent_T)
+# %%
 dataset_u = CRCDataset_seg(root_dir=root,
                          df=df_u,
                          config=config,
@@ -118,7 +148,8 @@ dataset_u = CRCDataset_seg(root_dir=root,
                          patch_size=patch_size,
                          stride=stride,
                          num_patches_per_sample=100,
-                         mode=mode)
+                         mode=mode,
+                         patch_mode=patch_mode)
 dataset_h = CRCDataset_seg(root_dir=root,
                             df=df_h,
                             config=config,
@@ -126,7 +157,16 @@ dataset_h = CRCDataset_seg(root_dir=root,
                             patch_size=patch_size,
                             stride=stride,
                             num_patches_per_sample=100,
-                            mode=mode)
+                            mode=mode,
+                            patch_mode=patch_mode)
+# %%
+ids_train_val = dataset_u.df['id'].astype(int).unique().tolist()
+SPLITS = 10
+
+stratification_labels = tnm_data.set_index('id').reindex(ids_train_val)['T_clean'].values
+skf = StratifiedKFold(n_splits=SPLITS, shuffle=True, random_state=seed)
+folds = list(skf.split(ids_train_val, stratification_labels))
+
 # %%
 paths = [
     "best_model_53bbcfec-9c65-4e5a-ae95-6fb395d9dc1d.pth",  # 1
@@ -140,22 +180,15 @@ paths = [
     "best_model_442f564e-bcbb-4d7a-b77a-ea7ff322b300.pth",  # 9
     "best_model_15e7d4cc-99a8-4005-afab-331772f54726.pth"   # 10
 ]
-
-ids_train_val = dataset_u.df['id'].astype(int).unique().tolist()
-SPLITS = 10
-
-kf = KFold(n_splits=SPLITS, shuffle=True, random_state=seed)
-folds = list(kf.split(ids_train_val))
-
 # %%
 for i, path in enumerate(paths):
     fold = i+1
     weights_path = path
-
+    fold = 8
+    weights_path = "best_model_9521c2a5-c48b-4150-8dca-f5e72677afe2.pth"
     for fold_idx, (train_idx, val_idx) in enumerate(folds):
         if fold_idx + 1 != fold:
             continue
-
         val_ids = [ids_train_val[i] for i in val_idx]
         test_ids = dataset_h.df['id'].astype(int).unique().tolist()
         val_dataset = torch.utils.data.Subset(dataset_u, [i for i in range(len(dataset_u)) if int(dataset_u.get_patient_id(i)) in val_ids])
@@ -164,6 +197,8 @@ for i, path in enumerate(paths):
         test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 
         weights_path = os.path.join(config['dir']['root'], 'models', weights_path)
+        print(val_ids)
+        print(weights_path)
         if mode == '2d':
             model = UNet(
                 spatial_dims=2,
@@ -217,15 +252,15 @@ for i, path in enumerate(paths):
                 targets = targets.unsqueeze(0)
                 body_mask = body_mask.unsqueeze(0)
 
-                use_mc = False
+                use_mc = True
                 if use_mc:
-                    mean_pred, std_pred, metrics, metrics_std = mc_forward(model, inputs, inferer, T=50, body_mask=body_mask)
+                    mean_pred, std_pred, metrics, metrics_std = mc_forward(model, inputs, inferer, T=20, body_mask=body_mask)
                     metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items()])
                     print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
                     metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics_std.items()])
-                    print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
+                    # print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
                     final_output = mean_pred
-                    final_output = (final_output.squeeze(0) > 0.5).cpu().numpy().astype(np.uint8)
+                    final_output = (final_output.squeeze(0) > probs).cpu().numpy().astype(np.uint8)
                    
                 else:
                     logits = inferer(inputs=inputs, network=model)
@@ -234,7 +269,7 @@ for i, path in enumerate(paths):
                     metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items()])
                     print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
                     final_output = torch.sigmoid(logits)
-                    final_output = (final_output.squeeze(0) > 0.5).cpu().numpy().astype(np.uint8)
+                    final_output = (final_output.squeeze(0) > probs).cpu().numpy().astype(np.uint8)
 
                 mask = targets.squeeze(0).cpu().numpy().astype(np.uint8)
                 combined_output = np.zeros_like(mask)
@@ -261,7 +296,7 @@ for i, path in enumerate(paths):
                     totals = {key: 0 for key in metrics.keys()}
                 for key, value in metrics.items():
                     totals[key] += value
-
+            
             averages = {key: total / num_samples for key, total in totals.items()}
             avg_metrics_str = ", ".join([f"Average {key}: {avg:.4f}" for key, avg in averages.items()])
             print(avg_metrics_str)
