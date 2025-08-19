@@ -38,6 +38,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
             optimizer.zero_grad()
             logits = model(inputs)
             criterion = criterion.to(device=logits.device)
+            targets = targets.float()
             loss = criterion(logits, targets)
             metrics = evaluate_segmentation(logits, targets, epoch)
             total_loss += loss.detach().item()
@@ -82,6 +83,7 @@ def train_net(mode, root, model, criterion, optimizer, dataloaders, num_epochs=1
                     logits[body_mask == 0] = -1e10
                 metrics = evaluate_segmentation(logits, targets, epoch)
                 criterion = criterion.to(device=logits.device)
+                targets = targets.float()
                 loss = criterion(logits, targets)
                 val_loss += loss.detach().item()
                 if val_totals is None:

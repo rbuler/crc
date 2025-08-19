@@ -10,6 +10,7 @@ import matplotlib.patches as patches
 from monai.metrics import DiceMetric, MeanIoU
 from scipy.ndimage import label
 from medpy.metric.binary import hd95, assd
+from scipy.ndimage import uniform_filter
 
 def find_unique_value_mapping(mask1, mask2) -> dict:
     """
@@ -383,6 +384,15 @@ def filter_small_components(binary_mask, voxel_spacing=(1.0, 1.0, 1.5), min_volu
     return kept_mask.astype(np.bool_)
 
 
+def cube_fits_in_intersection(pred_mask, gt_mask, cube_size):
+            """
+            Returns True if a cube of size cube_size^3 can fit entirely inside the intersection.
+            """
+            intersection = (pred_mask & gt_mask).astype(np.uint8)
+            smoothed = uniform_filter(intersection, size=cube_size, mode='constant', origin=0) * (cube_size**3)
+            return np.any(smoothed >= cube_size**3)
+
+
 def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thresh=0.5, logits_input=True):
     
     # target_spacing = (1.0, 1.0, 1.5)
@@ -424,13 +434,14 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thres
         mean_iou_metric.reset()
 
 
+        pred_np = valid_pred_labels.cpu().numpy().astype(np.bool_)
+        true_np = valid_true_masks.cpu().numpy().astype(np.bool_)
+        
         if epoch is not None and epoch < 20:
                 hd95_score = 0.0
                 assd_score = 0.0
         else:
 
-            pred_np = valid_pred_labels.cpu().numpy().astype(np.bool_)
-            true_np = valid_true_masks.cpu().numpy().astype(np.bool_)
             hd95_scores = []
             assd_scores = []
 
@@ -465,6 +476,15 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thres
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
         fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
 
+        cube_sizes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+        patient_detection = []
+        for cube_size in cube_sizes:
+            detected_count = sum(
+                cube_fits_in_intersection(pred_i[0], true_i[0], cube_size)
+                for pred_i, true_i in zip(pred_np, true_np)
+            )
+            patient_detection.append(detected_count / len(pred_np))
+
         return {
             "Dice": mean_dice,
             "IoU": mean_iou,
@@ -473,7 +493,12 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thres
             "FPR": fpr,
             "TPR": recall,
             "Precision": precision,
+            "patient_detection": np.array(patient_detection),
+            "cube_max_size": cube_sizes[np.max(np.where(np.array(patient_detection) == 1))] 
+            if np.any(np.array(patient_detection) == 1) 
+            else 0
         }
+
     else:
         
         fp_metrics = compute_false_positive_metrics(pred_labels, voxel_spacing=target_spacing)
