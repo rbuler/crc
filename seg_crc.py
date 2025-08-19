@@ -142,6 +142,8 @@ class LossFn:
 def get_optimizer(optimizer_name, model_params, lr, weight_decay):
     if optimizer_name == "adam":
         return optim.Adam(model_params, lr=lr, weight_decay=weight_decay)
+    if optimizer_name == "adamw":
+        return optim.AdamW(model_params, lr=lr, weight_decay=weight_decay)
     elif optimizer_name == "sgd":
         return optim.SGD(model_params, lr=lr, momentum=0.9, weight_decay=weight_decay)
     else:
