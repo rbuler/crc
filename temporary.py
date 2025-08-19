@@ -230,7 +230,7 @@ for i, path in enumerate(paths):
         model = model.to(device)
 
         # gaussian or not?
-        inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=36, overlap=0.75, mode="constant", device=torch.device('cpu'))
+        inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=36, overlap=0.25, mode="constant", device=torch.device('cpu'))
         model.eval()
         probs = 0.5
 
@@ -252,12 +252,12 @@ for i, path in enumerate(paths):
                 targets = targets.unsqueeze(0)
                 body_mask = body_mask.unsqueeze(0)
 
-                use_mc = True
+                use_mc = False
                 if use_mc:
                     mean_pred, std_pred, metrics, metrics_std = mc_forward(model, inputs, inferer, T=20, body_mask=body_mask)
-                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items()])
+                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items() if key != 'patient_detection'])
                     print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
-                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics_std.items()])
+                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics_std.items() if key != 'patient_detection'])
                     # print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
                     final_output = mean_pred
                     final_output = (final_output.squeeze(0) > probs).cpu().numpy().astype(np.uint8)
@@ -266,7 +266,7 @@ for i, path in enumerate(paths):
                     logits = inferer(inputs=inputs, network=model)
                     logits[body_mask == 0] = -1e10
                     metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
-                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items()])
+                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items() if key != 'patient_detection'])
                     print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
                     final_output = torch.sigmoid(logits)
                     final_output = (final_output.squeeze(0) > probs).cpu().numpy().astype(np.uint8)
@@ -278,6 +278,10 @@ for i, path in enumerate(paths):
                 combined_output[(mask == 1) & (final_output == 1)] = 3
 
                 output_dir = os.path.join("inference_output_last", f"patient_{id}")
+                if dataloader == val_dataloader:
+                    output_dir = os.path.join("inference_output_last", "validation", f"patient_{id}")
+                elif dataloader == test_dataloader:
+                    output_dir = os.path.join("inference_output_last", "test", f"patient_{id}")
                 os.makedirs(output_dir, exist_ok=True)
 
                 mask = mask.squeeze(0)
