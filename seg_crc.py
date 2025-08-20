@@ -327,6 +327,7 @@ model = model.to(device)
 loss_factory = LossFn(loss_fn=loss_fn, alpha=alpha, beta=beta, weight=pos_weight, gamma=2.0, device=device)
 criterion = loss_factory.get_loss()
 optimizer = get_optimizer(optimizer, model.parameters(), lr, weight_decay)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=6, min_lr=1e-6)
 
 if run:
     run["train/model"] = model.__class__.__name__
@@ -336,7 +337,7 @@ if run:
 
 # %%
 inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=36, overlap=0.75, device=torch.device('cpu'))
-best_model_path = train_net(mode, root, model, criterion, optimizer, dataloaders=[train_dataloader, val_dataloader],
+best_model_path = train_net(mode, root, model, criterion, optimizer, scheduler, dataloaders=[train_dataloader, val_dataloader],
                             num_epochs=num_epochs, patience=patience, device=device, run=run, inferer=inferer)
 test_net(mode, model, best_model_path, test_dataloader, device=device, run=run, inferer=inferer)
 
