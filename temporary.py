@@ -3,6 +3,7 @@ import re
 import sys
 import ast
 import yaml
+import json
 import torch
 import utils
 import random
@@ -11,10 +12,10 @@ import numpy as np
 import pandas as pd
 import torch.nn as nn
 import nibabel as nib
+import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 # from sklearn.model_selection import KFold
 from sklearn.model_selection import StratifiedKFold
-
 
 import monai.transforms as mt
 from utils import evaluate_segmentation
@@ -55,6 +56,29 @@ random.seed(seed)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+def numpy_to_list(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        return {k: numpy_to_list(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [numpy_to_list(v) for v in obj]
+    return obj
+
+
+def list_to_numpy(obj):
+    """Recursively convert lists in dict/list back to numpy arrays."""
+    if isinstance(obj, list):
+        # Only convert if it's a list of numbers (not a list of dicts)
+        if all(isinstance(x, (int, float)) for x in obj):
+            return np.array(obj)
+        else:
+            return [list_to_numpy(v) for v in obj]
+    if isinstance(obj, dict):
+        return {k: list_to_numpy(v) for k, v in obj.items()}
+    return obj
+
+
 def enable_last_mc_dropout(model):
     dropout3d_layers = [m for m in model.modules() if isinstance(m, nn.Dropout3d)]
     
@@ -62,11 +86,13 @@ def enable_last_mc_dropout(model):
         # Set only the last Dropout3d layer to train mode
         dropout3d_layers[-1].train()
 
+
 def enable_mc_dropout(model):
     dropout3d_layers = [m for m in model.modules() if isinstance(m, nn.Dropout3d)]
     
     for layer in dropout3d_layers:
         layer.train()
+
 
 @torch.no_grad()
 def mc_forward(model, inputs, inferer, T=20, body_mask=None):
@@ -93,7 +119,6 @@ def mc_forward(model, inputs, inferer, T=20, body_mask=None):
     metrics_std = {key: np.std([m[key] for m in metrics_list]) for key in metrics_list[0].keys()}
 
     return mean_pred, std_pred, metrics_mean, metrics_std
-
 # %%
 train_transforms = mt.Compose([mt.ToTensord(keys=["image", "mask"])])
 val_transforms = mt.Compose([
@@ -169,23 +194,25 @@ folds = list(skf.split(ids_train_val, stratification_labels))
 
 # %%
 paths = [
-    "best_model_53bbcfec-9c65-4e5a-ae95-6fb395d9dc1d.pth",  # 1
-    "best_model_96890d9d-d810-46e6-a898-4f9def279276.pth",  # 2
-    "best_model_c17d8489-5a14-449c-b844-b7c01a28964f.pth",  # 3
-    "best_model_33251dfb-5c62-4cda-90ec-abacc7c925ec.pth",  # 4
-    "best_model_60e3c15c-3b7a-4afd-a195-c6bf93aef4b1.pth",  # 5
-    "best_model_be650c7d-7af5-42d1-bb18-f8e08da05f9f.pth",  # 6
-    "best_model_23d8c77a-64a7-43dd-a8fc-ac997706f226.pth",  # 7
-    "best_model_3a3005cb-2c2d-4764-8ce7-07def61ef11f.pth",  # 8
-    "best_model_442f564e-bcbb-4d7a-b77a-ea7ff322b300.pth",  # 9
-    "best_model_15e7d4cc-99a8-4005-afab-331772f54726.pth"   # 10
+    "best_model_7a7eb0f2-86b2-41bf-91d1-9eb44f7f027c.pth",  # 1
+    "best_model_9b5cd086-538f-4dcc-a93c-63285ff96df2.pth",  # 2
+    "best_model_e4251409-e654-4525-871d-045d8a422621.pth",  # 3
+    "best_model_c61817a8-8539-4a1c-bf21-4528040468ec.pth",  # 4
+    "best_model_44df5e2d-b7ab-4b5c-8eeb-1872f13b43ed.pth",  # 5
+    "best_model_2f964ecd-4c1f-446d-a2c7-0b5663675581.pth",  # 6
+    "best_model_30bea749-65f7-4cfa-9056-aa4cef380e73.pth",  # 7
+    "best_model_9521c2a5-c48b-4150-8dca-f5e72677afe2.pth",  # 8
+    "best_model_fd5da63f-4f2a-4819-8374-0aee5cecf4c5.pth",  # 9
+    "best_model_e497c76b-6ea7-4a55-933b-a9b15eaf8810.pth"   # 10
 ]
+
+all_patients_metrics = {}
+
+
 # %%
 for i, path in enumerate(paths):
     fold = i+1
     weights_path = path
-    fold = 8
-    weights_path = "best_model_9521c2a5-c48b-4150-8dca-f5e72677afe2.pth"
     for fold_idx, (train_idx, val_idx) in enumerate(folds):
         if fold_idx + 1 != fold:
             continue
@@ -197,8 +224,7 @@ for i, path in enumerate(paths):
         test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=num_workers)
 
         weights_path = os.path.join(config['dir']['root'], 'models', weights_path)
-        print(val_ids)
-        print(weights_path)
+        print(fold, val_ids, weights_path)
         if mode == '2d':
             model = UNet(
                 spatial_dims=2,
@@ -230,7 +256,7 @@ for i, path in enumerate(paths):
         model = model.to(device)
 
         # gaussian or not?
-        inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=36, overlap=0.25, mode="constant", device=torch.device('cpu'))
+        inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=36, overlap=0.75, mode="constant", device=torch.device('cpu'))
         model.eval()
         probs = 0.5
 
@@ -255,9 +281,9 @@ for i, path in enumerate(paths):
                 use_mc = False
                 if use_mc:
                     mean_pred, std_pred, metrics, metrics_std = mc_forward(model, inputs, inferer, T=20, body_mask=body_mask)
-                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items() if key != 'patient_detection'])
+                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items() if 'patient' not in key])
                     print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
-                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics_std.items() if key != 'patient_detection'])
+                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics_std.items() if 'patient' not in key])
                     # print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
                     final_output = mean_pred
                     final_output = (final_output.squeeze(0) > probs).cpu().numpy().astype(np.uint8)
@@ -266,7 +292,7 @@ for i, path in enumerate(paths):
                     logits = inferer(inputs=inputs, network=model)
                     logits[body_mask == 0] = -1e10
                     metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
-                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items() if key != 'patient_detection'])
+                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items() if 'patient' not in key])
                     print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
                     final_output = torch.sigmoid(logits)
                     final_output = (final_output.squeeze(0) > probs).cpu().numpy().astype(np.uint8)
@@ -301,7 +327,84 @@ for i, path in enumerate(paths):
                 for key, value in metrics.items():
                     totals[key] += value
             
+                all_patients_metrics[str(id[0])] = {
+                    'fold': fold,
+                    'metrics': metrics
+                }
             averages = {key: total / num_samples for key, total in totals.items()}
-            avg_metrics_str = ", ".join([f"Average {key}: {avg:.4f}" for key, avg in averages.items()])
+            avg_metrics_str = ", ".join([f"Average {key}: {avg:.4f}" for key, avg in averages.items() if 'patient' not in key])
             print(avg_metrics_str)
 # %%
+
+cube_sizes = np.concatenate([np.arange(1, 20), np.arange(20, 55, 5)])
+
+detections = []
+max_detections = []
+for pid, pdata in all_patients_metrics.items():
+    det = pdata["metrics"]["patient_detection"]
+    max_det = pdata["metrics"]["patient_max_detection"]
+    detections.append(det)
+    max_detections.append(max_det)
+
+detections = np.vstack(detections)
+max_detections = np.vstack(max_detections)
+
+success_rate = detections.mean(axis=0)
+max_success_rate = max_detections.mean(axis=0)
+
+plt.figure(figsize=(10, 6))
+plt.plot(cube_sizes, success_rate, linestyle="-", label="Model Detection Success", color="blue")
+plt.plot(cube_sizes, max_success_rate, linestyle="--", label="Maximum Possible Detection", color="orange")
+plt.xlabel("Cube Size (Voxels per Side)", fontsize=12)
+plt.ylabel("Success Rate (Fraction of Patients)", fontsize=12)
+plt.ylim(0, 1)
+plt.xlim(1)  # Set x-axis lower limit to 1
+plt.grid(True, linestyle="--", alpha=0.6)
+plt.legend(fontsize=10)
+plt.title("Patient Detection Success vs. Cube Size", fontsize=14, fontweight="bold")
+plt.tight_layout()
+
+save_dir = os.path.join("inference_output_last", "figures")
+os.makedirs(save_dir, exist_ok=True)
+save_path = os.path.join(save_dir, "patient_detection_success_vs_cube_size_mc.png" if use_mc else "patient_detection_success_vs_cube_size.png")
+plt.savefig(save_path)
+plt.show()
+# %%
+
+tpr_values = [pdata["metrics"]["TPR"] for pid, pdata in all_patients_metrics.items()]
+precision_values = [pdata["metrics"]["Precision"] for pid, pdata in all_patients_metrics.items()]
+
+tpr_values = np.array(tpr_values)  # shape (n_patients,)
+precision_values = np.array(precision_values)  # shape (n_patients,)
+
+tpr_percent = tpr_values * 100  
+precision_percent = precision_values * 100  
+
+thresholds = np.linspace(0, 100, 201)
+tpr_success_fraction = [(tpr_percent >= th).mean() for th in thresholds]
+precision_success_fraction = [(precision_percent >= th).mean() for th in thresholds]
+
+plt.figure(figsize=(10, 6))
+plt.plot(thresholds, tpr_success_fraction, linestyle="-", color="green", label="TPR Distribution")
+plt.plot(thresholds, precision_success_fraction, linestyle="--", color="red", label="Precision Distribution")
+plt.xlabel("Threshold (%)", fontsize=12)
+plt.ylabel("Fraction of Patients ≥ Threshold", fontsize=12)
+plt.ylim(0, 1)
+plt.xlim(0, 100)
+plt.grid(True, linestyle="--", alpha=0.6)
+plt.legend(fontsize=10)
+plt.title("Fraction of Patients vs. Threshold (TPR and Precision)", fontsize=14, fontweight="bold")
+plt.tight_layout()
+
+save_path = os.path.join("inference_output_last", "figures", "tpr_prec_thresholds_mc.png" if use_mc else "tpr_prec_thresholds.png")
+plt.savefig(save_path)
+plt.show()
+# %%
+save_path = os.path.join("inference_output_last", "figures", "all_patients_metrics_mc.json" if use_mc else "all_patients_metrics.json")
+with open(save_path, 'w') as f:
+    json.dump(numpy_to_list(all_patients_metrics), f, indent=4)
+# %%
+
+# TODO
+# overlay mc and no-mc results
+# load json files and convert lists to numpy arrays
