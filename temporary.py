@@ -391,11 +391,90 @@ save_path = os.path.join("inference_output_last", "figures", "tpr_prec_threshold
 plt.savefig(save_path)
 plt.show()
 # %%
-# TODO
-# overlay mc and no-mc results
-# load json files and convert lists to numpy arrays
-load_path = os.path.join("inference_output_last", "figures", "all_patients_metrics_mc.json" if use_mc else "all_patients_metrics.json")
-with open(load_path, 'r') as f:
-    all_patients_metrics = json.load(f)
-all_patients_metrics = list_to_numpy(all_patients_metrics)
+
+# TODO make the code less redundant
+
+compare = False
+if compare:
+    load_path = os.path.join("inference_output_last", "figures", "all_patients_metrics.json")
+    load_path_mc = os.path.join("inference_output_last", "figures", "all_patients_metrics_mc.json") 
+    with open(load_path, 'r') as f:
+        all_patients_metrics = json.load(f)
+    with open(load_path_mc, 'r') as f:
+        all_patients_metrics_mc = json.load(f)
+    all_patients_metrics = list_to_numpy(all_patients_metrics)
+    all_patients_metrics_mc = list_to_numpy(all_patients_metrics_mc)
+
+    detections = []
+    max_detections = []
+    for pid, pdata in all_patients_metrics.items():
+        det = pdata["metrics"]["patient_detection"]
+        max_det = pdata["metrics"]["patient_max_detection"]
+        detections.append(det)
+        max_detections.append(max_det)
+    detections = np.vstack(detections)
+    max_detections = np.vstack(max_detections)
+    detections_mc = []
+    max_detections_mc = []
+    for pid, pdata in all_patients_metrics_mc.items():
+        det = pdata["metrics"]["patient_detection"]
+        max_det = pdata["metrics"]["patient_max_detection"]
+        detections_mc.append(det)
+        max_detections_mc.append(max_det)
+    detections_mc = np.vstack(detections_mc)
+    max_detections_mc = np.vstack(max_detections_mc)
+    success_rate = detections.mean(axis=0)
+    success_rate_mc = detections_mc.mean(axis=0)
+    max_success_rate = max_detections.mean(axis=0)
+    max_success_rate_mc = max_detections_mc.mean(axis=0)
+    plt.figure(figsize=(10, 6))
+    plt.plot(cube_sizes, success_rate, linestyle="-", label="Model Detection Success (No MC)", color="blue")
+    plt.plot(cube_sizes, success_rate_mc, linestyle="-", label="Model Detection Success (MC)", color="green")
+    plt.plot(cube_sizes, max_success_rate, linestyle="--", label="Maximum Possible Detection", color="orange")
+    plt.xlabel("Cube Size (Voxels per Side)", fontsize=12)
+    plt.ylabel("Success Rate (Fraction of Patients)", fontsize=12)
+    plt.ylim(0, 1)
+    plt.xlim(1)
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.legend(fontsize=10)
+    plt.title("Patient Detection Success vs. Cube Size (MC vs No MC)", fontsize=14, fontweight="bold")
+    plt.tight_layout()
+    save_path = os.path.join("inference_output_last", "figures", "patient_detection_success_vs_cube_size_mc_vs_no_mc.png")
+    plt.savefig(save_path)
+    plt.show()
+
+    # tpr and precision 
+    tpr_values = [pdata["metrics"]["TPR"] for pid, pdata in all_patients_metrics.items()]
+    precision_values = [pdata["metrics"]["Precision"] for pid, pdata in all_patients_metrics.items()]
+    tpr_values_mc = [pdata["metrics"]["TPR"] for pid, pdata in all_patients_metrics_mc.items()]
+    precision_values_mc = [pdata["metrics"]["Precision"] for pid, pdata in all_patients_metrics_mc.items()]
+    tpr_values = np.array(tpr_values)
+    precision_values = np.array(precision_values)
+    tpr_values_mc = np.array(tpr_values_mc)
+    precision_values_mc = np.array(precision_values_mc)
+    tpr_percent = tpr_values * 100
+    precision_percent = precision_values * 100
+    tpr_percent_mc = tpr_values_mc * 100
+    precision_percent_mc = precision_values_mc * 100
+    thresholds = np.linspace(0, 100, 201)
+    tpr_success_fraction = [(tpr_percent >= th).mean() for th in thresholds]
+    precision_success_fraction = [(precision_percent >= th).mean() for th in thresholds]
+    tpr_success_fraction_mc = [(tpr_percent_mc >= th).mean() for th in thresholds]
+    precision_success_fraction_mc = [(precision_percent_mc >= th).mean() for th in thresholds]
+    plt.figure(figsize=(10, 6))
+    plt.plot(thresholds, tpr_success_fraction, linestyle="-", color="green", label="TPR (No MC)")
+    plt.plot(thresholds, precision_success_fraction, linestyle="--", color="red", label="Precision (No MC)")
+    plt.plot(thresholds, tpr_success_fraction_mc, linestyle="-", color="blue", label="TPR (MC)")
+    plt.plot(thresholds, precision_success_fraction_mc, linestyle="--", color="orange", label="Precision (MC)")
+    plt.xlabel("Threshold (%)", fontsize=12)
+    plt.ylabel("Fraction of Patients ≥ Threshold", fontsize=12)
+    plt.ylim(0, 1)
+    plt.xlim(0, 100)
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.legend(fontsize=10)
+    plt.title("Fraction of Patients vs. Threshold (TPR and Precision, MC vs No MC)", fontsize=14, fontweight="bold")
+    plt.tight_layout()
+    save_path = os.path.join("inference_output_last", "figures", "tpr_prec_thresholds_mc_vs_no_mc.png")
+    plt.savefig(save_path)
+    plt.show()
 # %%
