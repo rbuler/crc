@@ -50,7 +50,7 @@ def train_net(mode, root, model, criterion, optimizer, scheduler, dataloaders, n
             optimizer.step()
 
         avg_loss = total_loss / num_batches
-        averages = {key: total / num_batches for key, total in totals.items()}
+        averages = {key: total / num_batches for key, total in totals.items() if 'patient' not in key}
 
         if run:
             run["train/loss"].log(avg_loss)
@@ -100,7 +100,7 @@ def train_net(mode, root, model, criterion, optimizer, scheduler, dataloaders, n
         
 
         avg_val_loss = val_loss / num_val_batches
-        val_averages = {key: total / num_val_batches for key, total in val_totals.items()}
+        val_averages = {key: total / num_val_batches for key, total in val_totals.items() if 'patient' not in key}
 
         if scheduler is not None:
             scheduler.step(avg_loss)
@@ -200,7 +200,7 @@ def test_net(mode, model, best_model_path, test_dataloader, device, num_classes=
             for key, value in metrics.items():
                 totals[key] += value
 
-    averages = {key: total / num_samples for key, total in totals.items()}
+    averages = {key: total / num_samples for key, total in totals.items() if 'patient' not in key}
     avg_metrics_str = ", ".join([f"Average {key}: {avg:.4f}" for key, avg in averages.items()])
 
     if run:
