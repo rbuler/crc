@@ -322,7 +322,6 @@ for i, path in enumerate(paths):
             avg_metrics_str = ", ".join([f"Average {key}: {avg:.4f}" for key, avg in averages.items() if 'patient' not in key])
             print(avg_metrics_str)
 
-    break
 # %%
 save_path = os.path.join("inference_output_last", "figures", "all_patients_metrics_mc.json" if use_mc else "all_patients_metrics.json")
 with open(save_path, 'w') as f:
