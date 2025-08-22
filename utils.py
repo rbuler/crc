@@ -14,8 +14,13 @@ from scipy.ndimage import uniform_filter
 
 
 def numpy_to_list(obj):
+    """Recursively convert numpy types to Python native types for JSON."""
     if isinstance(obj, np.ndarray):
         return obj.tolist()
+    if isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    if isinstance(obj, (np.floating, np.float32, np.float64)):
+        return float(obj)
     if isinstance(obj, dict):
         return {k: numpy_to_list(v) for k, v in obj.items()}
     if isinstance(obj, list):
