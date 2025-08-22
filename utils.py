@@ -385,12 +385,19 @@ def filter_small_components(binary_mask, voxel_spacing=(1.0, 1.0, 1.5), min_volu
 
 
 def cube_fits_in_intersection(pred_mask, gt_mask, cube_size):
-            """
-            Returns True if a cube of size cube_size^3 can fit entirely inside the intersection.
-            """
-            intersection = (pred_mask & gt_mask).astype(np.uint8)
-            smoothed = uniform_filter(intersection, size=cube_size, mode='constant', origin=0) * (cube_size**3)
-            return np.any(smoothed >= cube_size**3)
+    """
+    Returns a tuple of booleans:
+    - First value indicates if a cube of size cube_size^3 can fit entirely inside the intersection.
+    - Second value indicates if a cube of size cube_size^3 can fit entirely inside the ground truth mask (gt_mask).
+    """
+    intersection = (pred_mask & gt_mask).astype(np.uint8)
+    smoothed_intersection = uniform_filter(intersection, size=cube_size, mode='constant', origin=0) * (cube_size**3)
+    fits_in_intersection = np.any(smoothed_intersection >= cube_size**3)
+
+    smoothed_gt = uniform_filter(gt_mask.astype(np.uint8), size=cube_size, mode='constant', origin=0) * (cube_size**3)
+    fits_in_gt = np.any(smoothed_gt >= cube_size**3)
+
+    return fits_in_intersection, fits_in_gt
 
 
 def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thresh=0.5, logits_input=True):
@@ -440,6 +447,11 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thres
         if epoch is not None and epoch < 20:
                 hd95_score = 0.0
                 assd_score = 0.0
+                patient_detection = {
+                    "intersection": np.zeros(20),
+                    "gt": np.zeros(20),
+                }
+                cube_sizes = np.zeros(20)
         else:
 
             hd95_scores = []
@@ -467,6 +479,30 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thres
             hd95_score = np.nanmean(hd95_scores)
             assd_score = np.nanmean(assd_scores)
 
+
+
+        
+            cube_sizes = np.concatenate([np.arange(1, 20), np.arange(20, 55, 5)])
+            patient_detection_intersection = []
+            patient_detection_gt = []
+
+            for cube_size in cube_sizes:
+                fits_in_intersection_count = 0
+                fits_in_gt_count = 0
+                
+                for pred_i, true_i in zip(pred_np, true_np):
+                    fits_in_intersection, fits_in_gt = cube_fits_in_intersection(pred_i[0], true_i[0], cube_size)
+                    fits_in_intersection_count += fits_in_intersection
+                    fits_in_gt_count += fits_in_gt
+                
+                patient_detection_intersection.append(fits_in_intersection_count / len(pred_np))
+                patient_detection_gt.append(fits_in_gt_count / len(pred_np))
+
+            patient_detection = {
+                "intersection": np.array(patient_detection_intersection),
+                "gt": np.array(patient_detection_gt),
+            }
+
         tp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 1)).item()
         fp = torch.sum((valid_pred_labels == 1) & (valid_true_masks == 0)).item()
         fn = torch.sum((valid_pred_labels == 0) & (valid_true_masks == 1)).item()
@@ -476,14 +512,6 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thres
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
         fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
 
-        cube_sizes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-        patient_detection = []
-        for cube_size in cube_sizes:
-            detected_count = sum(
-                cube_fits_in_intersection(pred_i[0], true_i[0], cube_size)
-                for pred_i, true_i in zip(pred_np, true_np)
-            )
-            patient_detection.append(detected_count / len(pred_np))
 
         return {
             "Dice": mean_dice,
@@ -493,9 +521,10 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thres
             "FPR": fpr,
             "TPR": recall,
             "Precision": precision,
-            "patient_detection": np.array(patient_detection),
-            "cube_max_size": cube_sizes[np.max(np.where(np.array(patient_detection) == 1))] 
-            if np.any(np.array(patient_detection) == 1) 
+            "patient_detection": patient_detection['intersection'],
+            "patient_max_detection": patient_detection['gt'],
+            "cube_max_size": cube_sizes[np.max(np.where(np.array([x[0] for x in patient_detection]) == 1))] 
+            if np.any(np.array([x[0] for x in patient_detection]) == 1) 
             else 0
         }
 
