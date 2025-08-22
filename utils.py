@@ -12,6 +12,30 @@ from scipy.ndimage import label
 from medpy.metric.binary import hd95, assd
 from scipy.ndimage import uniform_filter
 
+
+def numpy_to_list(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        return {k: numpy_to_list(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [numpy_to_list(v) for v in obj]
+    return obj
+
+
+def list_to_numpy(obj):
+    """Recursively convert lists in dict/list back to numpy arrays."""
+    if isinstance(obj, list):
+        # Only convert if it's a list of numbers (not a list of dicts)
+        if all(isinstance(x, (int, float)) for x in obj):
+            return np.array(obj)
+        else:
+            return [list_to_numpy(v) for v in obj]
+    if isinstance(obj, dict):
+        return {k: list_to_numpy(v) for k, v in obj.items()}
+    return obj
+
+
 def find_unique_value_mapping(mask1, mask2) -> dict:
     """
     Find the mapping between unique values of two 3D masks, excluding zeros.
@@ -523,9 +547,11 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thres
             "Precision": precision,
             "patient_detection": patient_detection['intersection'],
             "patient_max_detection": patient_detection['gt'],
-            "cube_max_size": cube_sizes[np.max(np.where(np.array([x[0] for x in patient_detection]) == 1))] 
-            if np.any(np.array([x[0] for x in patient_detection]) == 1) 
-            else 0
+            "cube_max_size": (
+                cube_sizes[np.max(np.where(patient_detection["intersection"] == 1))]
+                if np.any(patient_detection["intersection"] == 1)
+                else 0
+            )
         }
 
     else:

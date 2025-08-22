@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedKFold
 
 import monai.transforms as mt
-from utils import evaluate_segmentation
+from utils import evaluate_segmentation, numpy_to_list, list_to_numpy
 from monai.inferers import SlidingWindowInferer
 from unetr_pp.network_architecture.synapse.unetr_pp_synapse import UNETR_PP
 from monai.networks.nets import UNet
@@ -56,28 +56,6 @@ random.seed(seed)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def numpy_to_list(obj):
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    if isinstance(obj, dict):
-        return {k: numpy_to_list(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [numpy_to_list(v) for v in obj]
-    return obj
-
-
-def list_to_numpy(obj):
-    """Recursively convert lists in dict/list back to numpy arrays."""
-    if isinstance(obj, list):
-        # Only convert if it's a list of numbers (not a list of dicts)
-        if all(isinstance(x, (int, float)) for x in obj):
-            return np.array(obj)
-        else:
-            return [list_to_numpy(v) for v in obj]
-    if isinstance(obj, dict):
-        return {k: list_to_numpy(v) for k, v in obj.items()}
-    return obj
-
 
 def enable_last_mc_dropout(model):
     dropout3d_layers = [m for m in model.modules() if isinstance(m, nn.Dropout3d)]
@@ -114,10 +92,19 @@ def mc_forward(model, inputs, inferer, T=20, body_mask=None):
     mean_pred = preds_stack.mean(dim=0)
     std_pred = preds_stack.std(dim=0)
 
-    # Calculate mean and std for metrics
-    metrics_mean = {key: np.mean([m[key] for m in metrics_list]) for key in metrics_list[0].keys()}
-    metrics_std = {key: np.std([m[key] for m in metrics_list]) for key in metrics_list[0].keys()}
+    metrics_mean = {}
+    metrics_std = {}
 
+    for key in metrics_list[0].keys():
+        values = [m[key] for m in metrics_list]
+        if isinstance(values[0], np.ndarray):  
+            arr = np.stack(values, axis=0)
+            mean_arr = arr.mean(axis=0)
+            metrics_mean[key] = (mean_arr >= 0.5).astype(int)
+            metrics_std[key] = arr.std(axis=0)
+        else:
+            metrics_mean[key] = np.mean(values)
+            metrics_std[key] = np.std(values)
     return mean_pred, std_pred, metrics_mean, metrics_std
 # %%
 train_transforms = mt.Compose([mt.ToTensord(keys=["image", "mask"])])
@@ -334,8 +321,13 @@ for i, path in enumerate(paths):
             averages = {key: total / num_samples for key, total in totals.items()}
             avg_metrics_str = ", ".join([f"Average {key}: {avg:.4f}" for key, avg in averages.items() if 'patient' not in key])
             print(avg_metrics_str)
-# %%
 
+    break
+# %%
+save_path = os.path.join("inference_output_last", "figures", "all_patients_metrics_mc.json" if use_mc else "all_patients_metrics.json")
+with open(save_path, 'w') as f:
+    json.dump(numpy_to_list(all_patients_metrics), f, indent=4)
+# %%
 cube_sizes = np.concatenate([np.arange(1, 20), np.arange(20, 55, 5)])
 
 detections = []
@@ -385,8 +377,8 @@ tpr_success_fraction = [(tpr_percent >= th).mean() for th in thresholds]
 precision_success_fraction = [(precision_percent >= th).mean() for th in thresholds]
 
 plt.figure(figsize=(10, 6))
-plt.plot(thresholds, tpr_success_fraction, linestyle="-", color="green", label="TPR Distribution")
-plt.plot(thresholds, precision_success_fraction, linestyle="--", color="red", label="Precision Distribution")
+plt.plot(thresholds, tpr_success_fraction, linestyle="-", color="green", label="TPR")
+plt.plot(thresholds, precision_success_fraction, linestyle="--", color="red", label="Precision")
 plt.xlabel("Threshold (%)", fontsize=12)
 plt.ylabel("Fraction of Patients ≥ Threshold", fontsize=12)
 plt.ylim(0, 1)
@@ -400,11 +392,11 @@ save_path = os.path.join("inference_output_last", "figures", "tpr_prec_threshold
 plt.savefig(save_path)
 plt.show()
 # %%
-save_path = os.path.join("inference_output_last", "figures", "all_patients_metrics_mc.json" if use_mc else "all_patients_metrics.json")
-with open(save_path, 'w') as f:
-    json.dump(numpy_to_list(all_patients_metrics), f, indent=4)
-# %%
-
 # TODO
 # overlay mc and no-mc results
 # load json files and convert lists to numpy arrays
+load_path = os.path.join("inference_output_last", "figures", "all_patients_metrics_mc.json" if use_mc else "all_patients_metrics.json")
+with open(load_path, 'r') as f:
+    all_patients_metrics = json.load(f)
+all_patients_metrics = list_to_numpy(all_patients_metrics)
+# %%
