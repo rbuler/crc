@@ -103,7 +103,7 @@ def train_net(mode, root, model, criterion, optimizer, scheduler, dataloaders, n
         val_averages = {key: total / num_val_batches for key, total in val_totals.items() if 'patient' not in key}
 
         if scheduler is not None:
-            scheduler.step(avg_loss)
+            scheduler.step(avg_val_loss)
 
         if run:
             run["val/loss"].log(avg_val_loss)
