@@ -64,6 +64,7 @@ if config['neptune']:
     run["parameters/config"] = config
     run["sys/group_tags"].add([mode])
     run["sys/group_tags"].add(["CV-10-3d"])
+    run["sys/tags"].add([patch_mode])
 else:
     run = None
 
@@ -142,8 +143,12 @@ class LossFn:
 def get_optimizer(optimizer_name, model_params, lr, weight_decay):
     if optimizer_name == "adam":
         return optim.Adam(model_params, lr=lr, weight_decay=weight_decay)
-    if optimizer_name == "adamw":
+    elif optimizer_name == "adamw":
         return optim.AdamW(model_params, lr=lr, weight_decay=weight_decay)
+    elif optimizer_name == "radam":
+        return optim.RAdam(model_params, lr=lr, weight_decay=weight_decay)
+    elif optimizer_name == "radamw":
+        return optim.RAdam(model_params, lr=lr, weight_decay=weight_decay, decoupled_weight_decay=True)
     elif optimizer_name == "sgd":
         return optim.SGD(model_params, lr=lr, momentum=0.9, weight_decay=weight_decay)
     else:
@@ -327,7 +332,20 @@ model = model.to(device)
 loss_factory = LossFn(loss_fn=loss_fn, alpha=alpha, beta=beta, weight=pos_weight, gamma=2.0, device=device)
 criterion = loss_factory.get_loss()
 optimizer = get_optimizer(optimizer, model.parameters(), lr, weight_decay)
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=6, min_lr=1e-6)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10, min_lr=1e-6)
+# scheduler = None
+
+warmup_epochs = 5
+def warmup_lambda(epoch):
+    if epoch < warmup_epochs:
+        return float(epoch + 1) / warmup_epochs
+    return 1.0
+
+warmup_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup_lambda)
+
+schedulers = {"warmup": warmup_scheduler,
+    "plateau": scheduler,
+    "warmup_epochs": warmup_epochs}
 
 if run:
     run["train/model"] = model.__class__.__name__
@@ -337,7 +355,7 @@ if run:
 
 # %%
 inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=36, overlap=0.75, device=torch.device('cpu'))
-best_model_path = train_net(mode, root, model, criterion, optimizer, scheduler, dataloaders=[train_dataloader, val_dataloader],
+best_model_path = train_net(mode, root, model, criterion, optimizer, schedulers, dataloaders=[train_dataloader, val_dataloader],
                             num_epochs=num_epochs, patience=patience, device=device, run=run, inferer=inferer)
 test_net(mode, model, best_model_path, test_dataloader, device=device, run=run, inferer=inferer)
 
