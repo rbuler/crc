@@ -5,7 +5,7 @@ import time
 import uuid
 import torch
 
-def train_net(mode, root, model, criterion, optimizer, scheduler, dataloaders, num_epochs=100, patience=10, device='cpu', run=None, inferer=None, num_classes=1):
+def train_net(mode, root, model, criterion, optimizer, schedulers, dataloaders, num_epochs=100, patience=10, device='cpu', run=None, inferer=None, num_classes=1):
     train_dataloader = dataloaders[0]
     val_dataloader = dataloaders[1]
     
@@ -102,8 +102,11 @@ def train_net(mode, root, model, criterion, optimizer, scheduler, dataloaders, n
         avg_val_loss = val_loss / num_val_batches
         val_averages = {key: total / num_val_batches for key, total in val_totals.items() if 'patient' not in key}
 
-        if scheduler is not None:
-            scheduler.step(avg_val_loss)
+        if schedulers is not None:
+            if epoch < schedulers["warmup_epochs"]:
+                schedulers["warmup"].step()
+            else:
+                schedulers["plateau"].step(val_loss)
 
         if run:
             run["val/loss"].log(avg_val_loss)
