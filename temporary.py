@@ -181,16 +181,16 @@ folds = list(skf.split(ids_train_val, stratification_labels))
 
 # %%
 paths = [
-    "best_model_7a7eb0f2-86b2-41bf-91d1-9eb44f7f027c.pth",  # 1
-    "best_model_9b5cd086-538f-4dcc-a93c-63285ff96df2.pth",  # 2
-    "best_model_e4251409-e654-4525-871d-045d8a422621.pth",  # 3
-    "best_model_c61817a8-8539-4a1c-bf21-4528040468ec.pth",  # 4
-    "best_model_44df5e2d-b7ab-4b5c-8eeb-1872f13b43ed.pth",  # 5
-    "best_model_2f964ecd-4c1f-446d-a2c7-0b5663675581.pth",  # 6
-    "best_model_30bea749-65f7-4cfa-9056-aa4cef380e73.pth",  # 7
-    "best_model_9521c2a5-c48b-4150-8dca-f5e72677afe2.pth",  # 8
-    "best_model_fd5da63f-4f2a-4819-8374-0aee5cecf4c5.pth",  # 9
-    "best_model_e497c76b-6ea7-4a55-933b-a9b15eaf8810.pth"   # 10
+    "best_model_ae559da8-a149-4a42-b1f0-3d1618f79206.pth",  # 1
+    "best_model_2c5cbe95-534d-4d13-b640-d06f9cb4902f.pth",  # 2
+    "best_model_f6f767bb-ef12-47a3-bbb4-91e7f86901a0.pth",  # 3
+    "best_model_940c745a-b772-41c6-9097-81293ba46fc2.pth",  # 4
+    "best_model_63bda0be-35cd-45f4-b8c8-ba3023cb1e94.pth",  # 5
+    "best_model_9fd71df9-2974-4ec6-9d9d-dbbd9770b475.pth",  # 6
+    "best_model_be989c74-6ab5-4046-98be-b5d67622c2c4.pth",  # 7
+    "best_model_814ccb96-72da-43c5-8551-b1b16120e0fb.pth",  # 8
+    "best_model_af77cf3e-eb1e-49c9-b667-610e714719df.pth",  # 9
+    "best_model_ec84797f-9555-4ca9-ae43-f34083d33df2.pth"  # 10
 ]
 
 all_patients_metrics = {}
@@ -292,9 +292,9 @@ for i, path in enumerate(paths):
 
                 output_dir = os.path.join("inference_output_last", f"patient_{id}")
                 if dataloader == val_dataloader:
-                    output_dir = os.path.join("inference_output_last", "validation", f"patient_{id}")
+                    output_dir = os.path.join("inference_output_last", "validation", "mc" if use_mc else "no_mc", f"patient_{id}")
                 elif dataloader == test_dataloader:
-                    output_dir = os.path.join("inference_output_last", "test", f"patient_{id}")
+                    output_dir = os.path.join("inference_output_last", "test", "mc" if use_mc else "no_mc", f"patient_{id}")
                 os.makedirs(output_dir, exist_ok=True)
 
                 mask = mask.squeeze(0)
@@ -345,7 +345,7 @@ max_success_rate = max_detections.mean(axis=0)
 
 plt.figure(figsize=(10, 6))
 plt.plot(cube_sizes, success_rate, linestyle="-", label="Model Detection Success", color="blue")
-plt.plot(cube_sizes, max_success_rate, linestyle="--", label="Maximum Possible Detection", color="orange")
+plt.plot(cube_sizes, max_success_rate, linestyle="-", label="Maximum Possible Detection", color="green")
 plt.xlabel("Cube Size (Voxels per Side)", fontsize=12)
 plt.ylabel("Success Rate (Fraction of Patients)", fontsize=12)
 plt.ylim(0, 1)
@@ -376,8 +376,8 @@ tpr_success_fraction = [(tpr_percent >= th).mean() for th in thresholds]
 precision_success_fraction = [(precision_percent >= th).mean() for th in thresholds]
 
 plt.figure(figsize=(10, 6))
-plt.plot(thresholds, tpr_success_fraction, linestyle="-", color="green", label="TPR")
-plt.plot(thresholds, precision_success_fraction, linestyle="--", color="red", label="Precision")
+plt.plot(thresholds, tpr_success_fraction, linestyle="-", color="blue", label="TPR")
+plt.plot(thresholds, precision_success_fraction, linestyle="-", color="red", label="Precision")
 plt.xlabel("Threshold (%)", fontsize=12)
 plt.ylabel("Fraction of Patients ≥ Threshold", fontsize=12)
 plt.ylim(0, 1)
@@ -429,8 +429,8 @@ if compare:
     max_success_rate_mc = max_detections_mc.mean(axis=0)
     plt.figure(figsize=(10, 6))
     plt.plot(cube_sizes, success_rate, linestyle="-", label="Model Detection Success (No MC)", color="blue")
-    plt.plot(cube_sizes, success_rate_mc, linestyle="-", label="Model Detection Success (MC)", color="green")
-    plt.plot(cube_sizes, max_success_rate, linestyle="--", label="Maximum Possible Detection", color="orange")
+    plt.plot(cube_sizes, success_rate_mc, linestyle="--", label="Model Detection Success (MC)", color="blue")
+    plt.plot(cube_sizes, max_success_rate, linestyle="-", label="Maximum Possible Detection", color="green")
     plt.xlabel("Cube Size (Voxels per Side)", fontsize=12)
     plt.ylabel("Success Rate (Fraction of Patients)", fontsize=12)
     plt.ylim(0, 1)
@@ -462,10 +462,10 @@ if compare:
     tpr_success_fraction_mc = [(tpr_percent_mc >= th).mean() for th in thresholds]
     precision_success_fraction_mc = [(precision_percent_mc >= th).mean() for th in thresholds]
     plt.figure(figsize=(10, 6))
-    plt.plot(thresholds, tpr_success_fraction, linestyle="-", color="green", label="TPR (No MC)")
-    plt.plot(thresholds, precision_success_fraction, linestyle="--", color="red", label="Precision (No MC)")
-    plt.plot(thresholds, tpr_success_fraction_mc, linestyle="-", color="blue", label="TPR (MC)")
-    plt.plot(thresholds, precision_success_fraction_mc, linestyle="--", color="orange", label="Precision (MC)")
+    plt.plot(thresholds, tpr_success_fraction, linestyle="-", color="blue", label="TPR (No MC)")
+    plt.plot(thresholds, precision_success_fraction, linestyle="-", color="red", label="Precision (No MC)")
+    plt.plot(thresholds, tpr_success_fraction_mc, linestyle="--", color="blue", label="TPR (MC)")
+    plt.plot(thresholds, precision_success_fraction_mc, linestyle="--", color="red", label="Precision (MC)")
     plt.xlabel("Threshold (%)", fontsize=12)
     plt.ylabel("Fraction of Patients ≥ Threshold", fontsize=12)
     plt.ylim(0, 1)
