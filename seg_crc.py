@@ -110,7 +110,7 @@ class LossFn:
         elif self.loss_fn == "dicefocal":
             return DiceFocalLoss(sigmoid=True, squared_pred=True, gamma=self.gamma)
         elif self.loss_fn == "focal":
-            return FocalLoss(gamma=self.gamma)
+            return FocalLoss(gamma=self.gamma, alpha=0.99)
         else:
             raise ValueError(f"Unsupported loss function: {self.loss_fn}")
 
@@ -118,7 +118,7 @@ class LossFn:
         def __init__(self, alpha, beta, weights=(0.7, 0.3), gamma=2):
             super().__init__()
             self.tversky_loss = TverskyLoss(alpha=alpha, beta=beta, sigmoid=True)
-            self.focal_loss = FocalLoss(gamma=gamma)
+            self.focal_loss = FocalLoss(gamma=gamma, alpha=0.99)
             self.weights = weights
 
         def forward(self, logits, targets):
@@ -130,7 +130,7 @@ class LossFn:
         def __init__(self, gamma=1.0):
             super().__init__()
             self.dicece = DiceCELoss(sigmoid=True, squared_pred=True)
-            self.focal_loss = FocalLoss(gamma=gamma)
+            self.focal_loss = FocalLoss(gamma=gamma, alpha=0.99)
 
         def forward(self, logits, targets):
 
@@ -317,14 +317,29 @@ model = UNet(
 )
 
 if mode == '3d':
-    model = UNETR_PP(in_channels=1, out_channels=14,
-                    img_size=tuple(patch_size),
-                    depths=[3, 3, 3, 3],
-                    dims=[32, 64, 128, 256], do_ds=False)
-    weights_path = os.path.join(root, "models", "model_final_checkpoint.model")
-    checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
-    model.load_state_dict(checkpoint['state_dict'], strict=False)
-    model.out1.conv.conv = torch.nn.Conv3d(16, num_classes, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+    model = UNETR_PP(
+        in_channels=1,
+        out_channels=14,
+        img_size=tuple(patch_size),
+        depths=[3, 3, 3, 3],
+        dims=[32, 64, 128, 256],
+        do_ds=False
+    )
+
+    use_pretrained = True
+
+    if use_pretrained:
+        weights_path = os.path.join(root, "models", "model_final_checkpoint.model")
+        checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
+        model.load_state_dict(checkpoint['state_dict'], strict=False)
+
+    in_ch = model.out1.conv.conv.in_channels
+    model.out1.conv.conv = torch.nn.Conv3d(
+        in_ch,
+        num_classes,
+        kernel_size=1,
+        stride=1
+    )
 
 model = model.to(device)
 
@@ -354,7 +369,7 @@ if run:
     run["train/optimizer"] = optimizer.__class__.__name__
 
 # %%
-inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=36, overlap=0.75, device=torch.device('cpu'))
+inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=36, overlap=0.75, device=torch.device('cpu'), mode='constant', padding_mode='constant', cval=1.0)
 best_model_path = train_net(mode, root, model, criterion, optimizer, schedulers, dataloaders=[train_dataloader, val_dataloader],
                             num_epochs=num_epochs, patience=patience, device=device, run=run, inferer=inferer)
 test_net(mode, model, best_model_path, test_dataloader, device=device, run=run, inferer=inferer)
