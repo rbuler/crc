@@ -216,30 +216,37 @@ clinical_data = pd.read_excel(
             index_col=False,
             na_filter=True,
             na_values=default_missing)
-tnm_data = clinical_data.rename(columns={'TNM wg mnie': 'TNM', 'Nr pacjenta': 'id'})[['id', 'TNM']].dropna(subset=['id'])
+tnm_data = clinical_data.rename(columns={
+    'TNM wg mnie': 'TNM',
+    'Nr pacjenta': 'id',
+    'Płeć': 'gender'
+})[['id', 'TNM', 'gender']].dropna(subset=['id'])
+
 tnm_data = tnm_data[tnm_data['id'].astype(int).isin(df_u['id'].astype(int))]
 tnm_data["T_extracted"] = tnm_data["TNM"].apply(extract_T)
 most_frequent_T = tnm_data["T_extracted"].dropna().mode()[0]
 tnm_data["T_clean"] = tnm_data["T_extracted"].fillna(most_frequent_T)
+tnm_data["strat_label"] = (
+    tnm_data["T_clean"].astype(str) + "_" + tnm_data["gender"].astype(str))
 # %%
 dataset_u = CRCDataset_seg(root_dir=root,
-                         df=df_u,
-                         config=config,
-                         transforms=transforms,
-                         patch_size=patch_size,
-                         stride=stride,
-                         num_patches_per_sample=100,
-                         mode=mode,
-                         patch_mode=patch_mode)
+                           df=df_u,
+                           config=config,
+                           transforms=transforms,
+                           patch_size=patch_size,
+                           stride=stride,
+                           num_patches_per_sample=100,
+                           mode=mode,
+                           patch_mode=patch_mode)
 dataset_h = CRCDataset_seg(root_dir=root,
-                            df=df_h,
-                            config=config,
-                            transforms=transforms,
-                            patch_size=patch_size,
-                            stride=stride,
-                            num_patches_per_sample=100,
-                            mode=mode,
-                            patch_mode=patch_mode)
+                           df=df_h,
+                           config=config,
+                           transforms=transforms,
+                           patch_size=patch_size,
+                           stride=stride,
+                           num_patches_per_sample=100,
+                           mode=mode,
+                           patch_mode=patch_mode)
 # %%
 ids_train_val = dataset_u.df['id'].astype(int).unique().tolist()
 SPLITS = 10
