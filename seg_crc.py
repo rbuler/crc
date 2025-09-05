@@ -227,7 +227,7 @@ tnm_data["T_extracted"] = tnm_data["TNM"].apply(extract_T)
 most_frequent_T = tnm_data["T_extracted"].dropna().mode()[0]
 tnm_data["T_clean"] = tnm_data["T_extracted"].fillna(most_frequent_T)
 tnm_data["strat_label"] = (
-    tnm_data["T_clean"].astype(str) + "_" + tnm_data["gender"].astype(str))
+    tnm_data["T_clean"].astype(str)) # + "_" + tnm_data["gender"].astype(str))
 # %%
 dataset_u = CRCDataset_seg(root_dir=root,
                            df=df_u,
@@ -251,7 +251,7 @@ dataset_h = CRCDataset_seg(root_dir=root,
 ids_train_val = dataset_u.df['id'].astype(int).unique().tolist()
 SPLITS = 10
 
-stratification_labels = tnm_data.set_index('id').reindex(ids_train_val)['T_clean'].values
+stratification_labels = tnm_data.set_index('id').reindex(ids_train_val)['strat_label'].values
 skf = StratifiedKFold(n_splits=SPLITS, shuffle=True, random_state=seed)
 folds = list(skf.split(ids_train_val, stratification_labels))
 
