@@ -37,7 +37,6 @@ def train_net(mode, root, model, criterion, optimizer, schedulers, dataloaders, 
                 targets = targets.reshape(targets.shape[0] * targets.shape[1], *targets.shape[2:]).unsqueeze(1)
             optimizer.zero_grad()
             logits = model(inputs)
-            criterion = criterion.to(device=logits.device)
             targets = targets.float()
             loss = criterion(logits, targets)
             metrics = evaluate_segmentation(logits, targets, epoch)
@@ -82,7 +81,6 @@ def train_net(mode, root, model, criterion, optimizer, schedulers, dataloaders, 
                     logits = inferer(inputs=inputs, network=model)
                     logits[body_mask == 0] = -1e10
                 metrics = evaluate_segmentation(logits, targets, epoch)
-                criterion = criterion.to(device=logits.device)
                 targets = targets.float()
                 loss = criterion(logits, targets)
                 val_loss += loss.detach().item()
