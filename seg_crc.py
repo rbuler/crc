@@ -376,7 +376,7 @@ if run:
     run["train/optimizer"] = optimizer.__class__.__name__
 
 # %%
-inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=36, overlap=0.75, device=torch.device('cpu'), mode='constant', padding_mode='constant', cval=1.0)
+inferer = SlidingWindowInferer(roi_size=tuple(patch_size), sw_batch_size=36, overlap=0.75, device=torch.device('cpu'), mode='constant', padding_mode='constant', cval=0.0)
 best_model_path = train_net(mode, root, model, criterion, optimizer, schedulers, dataloaders=[train_dataloader, val_dataloader],
                             num_epochs=num_epochs, patience=patience, device=device, run=run, inferer=inferer)
 test_net(mode, model, best_model_path, test_dataloader, device=device, run=run, inferer=inferer)
