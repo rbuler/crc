@@ -20,7 +20,7 @@ class CRCDataset_seg(Dataset):
                  transforms=None,
                  patch_size: tuple = (64, 64, 64),
                  stride: int = 32,
-                 num_patches_per_sample: int = 50,
+                 num_patches: int = 50,
                  mode = '3d',
                  patch_mode='dict_transform'):  
                          
@@ -29,7 +29,7 @@ class CRCDataset_seg(Dataset):
         self.transforms = transforms
         self.patch_size = patch_size
         self.stride = stride
-        self.num_patches_per_sample = num_patches_per_sample
+        self.num_patches = num_patches
         self.mode = mode
         self.train_mode = False
         self.patch_mode = patch_mode
@@ -100,9 +100,9 @@ class CRCDataset_seg(Dataset):
                 num_foreground = sum(1 for p in patches if torch.sum(p[1] > 0) > min_voxel_threshold)
 
                 if num_foreground == 0:
-                    num_to_select = 36
+                    num_to_select = self.num_patches
                 else:
-                    num_to_select = min(36, num_foreground * 2)
+                    num_to_select = min(self.num_patches, num_foreground * 2)
 
                 selected_patches = self.select_patches(patches, num_to_select)
                 img_patch = torch.stack([p[0] for p in selected_patches])
