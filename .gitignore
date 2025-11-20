@@ -7,3 +7,5 @@ unetr_pp
 inference_output
 .vscode
 inference_output_last
+figures
+radiomics_umap_output
