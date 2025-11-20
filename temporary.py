@@ -159,7 +159,7 @@ dataset_u = CRCDataset_seg(root_dir=root,
                          transforms=transforms,
                          patch_size=patch_size,
                          stride=stride,
-                         num_patches_per_sample=100,
+                         num_patches=100,
                          mode=mode,
                          patch_mode=patch_mode)
 dataset_h = CRCDataset_seg(root_dir=root,
@@ -168,7 +168,7 @@ dataset_h = CRCDataset_seg(root_dir=root,
                             transforms=transforms,
                             patch_size=patch_size,
                             stride=stride,
-                            num_patches_per_sample=100,
+                            num_patches=100,
                             mode=mode,
                             patch_mode=patch_mode)
 # %%
@@ -193,6 +193,11 @@ paths = [
     "best_model_ec84797f-9555-4ca9-ae43-f34083d33df2.pth"  # 10
 ]
 
+
+# Aggregated containers across folds
+agg_validation_all = {}
+agg_test_all = {}
+
 all_patients_metrics = {}
 
 
@@ -212,34 +217,18 @@ for i, path in enumerate(paths):
 
         weights_path = os.path.join(config['dir']['root'], 'models', weights_path)
         print(fold, val_ids, weights_path)
-        if mode == '2d':
-            model = UNet(
-                spatial_dims=2,
-                in_channels=1,
-                out_channels=1,
-                channels=[32, 64, 128, 256, 512],
-                strides=[2, 2, 2, 2],
-                kernel_size=3,
-                up_kernel_size=3,
-                num_res_units=2,
-                act=("PReLU", {}),
-                norm=("instance", {"affine": False}),
-                dropout=0.1,
-                bias=True
-            )
-            model.load_state_dict(torch.load(weights_path))
-        elif mode == '3d':
-            model = UNETR_PP(
-                in_channels=1,
-                out_channels=14,
-                img_size=tuple(patch_size),
-                depths=[3, 3, 3, 3],
-                dims=[32, 64, 128, 256],
-                do_ds=False
-            )
-            model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
-            checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
-            model.load_state_dict(checkpoint)
+ 
+        model = UNETR_PP(
+            in_channels=1,
+            out_channels=14,
+            img_size=tuple(patch_size),
+            depths=[3, 3, 3, 3],
+            dims=[32, 64, 128, 256],
+            do_ds=False
+        )
+        model.out1.conv.conv = torch.nn.Conv3d(16, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1))
+        checkpoint = torch.load(weights_path, weights_only=False, map_location=device)
+        model.load_state_dict(checkpoint)
         model = model.to(device)
 
         # gaussian or not?
@@ -248,281 +237,139 @@ for i, path in enumerate(paths):
         probs = 0.5
 
         
-        dataloader = val_dataloader
-        dataloader.dataset.dataset.set_mode(train_mode=False)
+        # Run validation then test sequentially and save per-phase JSON
+        for phase_name, dataloader in [('validation', val_dataloader), ('test', test_dataloader)]:
+            all_patients_metrics = {}
+            dataloader.dataset.dataset.set_mode(train_mode=False)
 
-        num_samples = len(dataloader)
+            num_samples = len(dataloader)
 
-        with torch.no_grad():
-            totals = None
-            for i, (_, _, image, mask, id) in enumerate(dataloader):
+            with torch.no_grad():
+                totals = None
+                for i, (_, _, image, mask, id) in enumerate(dataloader):
 
-                inputs = image.to(device, dtype=torch.float32)
-                targets = mask["mask"].to(torch.device('cpu'), dtype=torch.long)
-                body_mask = mask["body_mask"].to(torch.device('cpu'), dtype=torch.long)
-                inputs = inputs.unsqueeze(0)
+                    inputs = image.to(device, dtype=torch.float32)
+                    targets = mask["mask"].to(torch.device('cpu'), dtype=torch.long)
+                    body_mask = mask["body_mask"].to(torch.device('cpu'), dtype=torch.long)
+                    inputs = inputs.unsqueeze(0)
 
-                targets = targets.unsqueeze(0)
-                body_mask = body_mask.unsqueeze(0)
+                    targets = targets.unsqueeze(0)
+                    body_mask = body_mask.unsqueeze(0)
 
-                use_mc = False
-                if use_mc:
-                    mean_pred, std_pred, metrics, metrics_std = mc_forward(model, inputs, inferer, T=20, body_mask=body_mask)
-                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items() if 'patient' not in key])
-                    print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
-                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics_std.items() if 'patient' not in key])
-                    # print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
-                    final_output = mean_pred
-                    final_output = (final_output.squeeze(0) > probs).cpu().numpy().astype(np.uint8)
-                   
-                else:
-                    logits = inferer(inputs=inputs, network=model)
-                    logits[body_mask == 0] = -1e10
-                    metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
-                    metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items() if 'patient' not in key])
-                    print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
-                    final_output = torch.sigmoid(logits)
-                    final_output = (final_output.squeeze(0) > probs).cpu().numpy().astype(np.uint8)
+                    use_mc = False
+                    if use_mc:
+                        mean_pred, std_pred, metrics, metrics_std = mc_forward(model, inputs, inferer, T=20, body_mask=body_mask)
+                        metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items() if 'patient' not in key])
+                        print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
+                        metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics_std.items() if 'patient' not in key])
+                        final_output = mean_pred
+                        final_output = (final_output.squeeze(0) > probs).cpu().numpy().astype(np.uint8)
+                       
+                    else:
+                        logits = inferer(inputs=inputs, network=model)
+                        logits[body_mask == 0] = -1e10
+                        metrics = evaluate_segmentation(logits, targets, num_classes=num_classes, prob_thresh=probs)
+                        metrics_str = " | ".join([f"{key}: {float(value):.3f}" for key, value in metrics.items() if 'patient' not in key])
+                        print(f"Patient_ID: {str(id[0]):<7} | {metrics_str}")
+                        final_output_logit = torch.sigmoid(logits)
+                        final_output = (final_output_logit.squeeze(0) > probs).cpu().numpy().astype(np.uint8)
 
-                mask = targets.squeeze(0).cpu().numpy().astype(np.uint8)
-                combined_output = np.zeros_like(mask)
-                combined_output[mask == 1] = 1
-                combined_output[final_output == 1] = 2
-                combined_output[(mask == 1) & (final_output == 1)] = 3
+                    mask = targets.squeeze(0).cpu().numpy().astype(np.uint8)
+                    combined_output = np.zeros_like(mask)
+                    combined_output[mask == 1] = 1
+                    combined_output[final_output == 1] = 2
+                    combined_output[(mask == 1) & (final_output == 1)] = 3
 
-                output_dir = os.path.join("inference_output_last", f"patient_{id}")
-                if dataloader == val_dataloader:
-                    output_dir = os.path.join("inference_output_last", "validation", "mc" if use_mc else "no_mc", f"patient_{id}")
-                elif dataloader == test_dataloader:
-                    output_dir = os.path.join("inference_output_last", "test", f"fold_{fold}",  "mc" if use_mc else "no_mc", f"patient_{id}")
-                os.makedirs(output_dir, exist_ok=True)
+                    if phase_name == 'validation':
+                        output_dir = os.path.join("inference_output_last", "validation", "mc" if use_mc else "no_mc", f"patient_{id}")
+                    else:
+                        output_dir = os.path.join("inference_output_last", "test", f"fold_{fold}",  "mc" if use_mc else "no_mc", f"patient_{id}")
+                    os.makedirs(output_dir, exist_ok=True)
 
-                mask = mask.squeeze(0)
-                combined_output = combined_output.squeeze(0)
+                    mask = mask.squeeze(0)
+                    combined_output = combined_output.squeeze(0)
 
-                image_nifti = nib.Nifti1Image(image.squeeze(0).cpu().numpy(), np.eye(4))
-                mask_nifti = nib.Nifti1Image(mask, np.eye(4))
-                combined_output_nifti = nib.Nifti1Image(combined_output, np.eye(4))
-                nib.save(image_nifti, os.path.join(output_dir, f"{id}_image.nii.gz"))
-                nib.save(mask_nifti, os.path.join(output_dir, f"{id}_mask.nii.gz"))
-                nib.save(combined_output_nifti, os.path.join(output_dir, f"{id}_result.nii.gz"))
-                # TODO: Add functionality to save NIfTI files for 2D approach
-                # nib.save(combined_output_nifti, f'inference_output/final_output_filtered_{fold}_{id}.nii.gz')
+                    image_nifti = nib.Nifti1Image(image.squeeze(0).cpu().numpy(), np.eye(4))
+                    mask_nifti = nib.Nifti1Image(mask, np.eye(4))
+                    combined_output_nifti = nib.Nifti1Image(combined_output, np.eye(4))
+                    nib.save(image_nifti, os.path.join(output_dir, f"{id}_image.nii.gz"))
+                    nib.save(mask_nifti, os.path.join(output_dir, f"{id}_mask.nii.gz"))
+                    nib.save(combined_output_nifti, os.path.join(output_dir, f"{id}_result.nii.gz"))
 
-                if totals is None:
-                    totals = {key: 0 for key in metrics.keys()}
-                for key, value in metrics.items():
-                    totals[key] += value
-            
-                all_patients_metrics[str(id[0])] = {
-                    'fold': fold,
-                    'metrics': metrics
-                }
-            averages = {key: total / num_samples for key, total in totals.items()}
-            avg_metrics_str = ", ".join([f"Average {key}: {avg:.4f}" for key, avg in averages.items() if 'patient' not in key])
-            print(avg_metrics_str)
+                    if use_mc is False:
+                        # logits may be a MONAI MetaTensor or a torch.Tensor — convert robustly to numpy
+                        try:
+                            arr = logits.squeeze(0).cpu().numpy()
+                        except Exception:
+                            # support MONAI MetaTensor which may store underlying tensor in .tensor
+                            try:
+                                arr = logits.squeeze(0).tensor.cpu().numpy()
+                            except Exception:
+                                # fallback: try converting via torch.as_tensor
+                                try:
+                                    import torch as _torch
+                                    arr = _torch.as_tensor(logits.squeeze(0)).cpu().numpy()
+                                except Exception:
+                                    raise
+                        # ensure float32 for nibabel
+                        arr = arr.astype(np.float32)
+                        nib.save(nib.Nifti1Image(arr, np.eye(4)), os.path.join(output_dir, f"{id}_logits.nii.gz"))
+                        # save the sigmoid scores robustly (handle MetaTensor)
+                        try:
+                            scores_arr = final_output_logit.squeeze(0).cpu().numpy()
+                        except Exception:
+                            try:
+                                scores_arr = final_output_logit.squeeze(0).tensor.cpu().numpy()
+                            except Exception:
+                                try:
+                                    import torch as _torch
+                                    scores_arr = _torch.as_tensor(final_output_logit.squeeze(0)).cpu().numpy()
+                                except Exception:
+                                    raise
+                        scores_arr = scores_arr.astype(np.float32)
+                        nib.save(nib.Nifti1Image(scores_arr, np.eye(4)), os.path.join(output_dir, f"{id}_scores.nii.gz"))
 
+                    if totals is None:
+                        totals = {key: 0 for key in metrics.keys()}
+                    for key, value in metrics.items():
+                        totals[key] += value
+
+                    all_patients_metrics[str(id[0])] = {
+                        'fold': fold,
+                        'metrics': metrics
+                    }
+                averages = {key: total / num_samples for key, total in totals.items()}
+                avg_metrics_str = ", ".join([f"Average {key}: {avg:.4f}" for key, avg in averages.items() if 'patient' not in key])
+                print(f"[{phase_name}] {avg_metrics_str}")
+
+            # save per-phase all_patients_metrics JSON
+            if phase_name == 'validation':
+                save_path = os.path.join("inference_output_last", "figures", "all_patients_metrics_mc.json" if use_mc else "all_patients_metrics.json")
+            else:
+                save_path = os.path.join("inference_output_last", "figures", "test", f"fold_{fold}", "all_patients_metrics_mc.json" if use_mc else "all_patients_metrics.json")
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            with open(save_path, 'w') as f:
+                json.dump(numpy_to_list(all_patients_metrics), f, indent=4)
+            # append to aggregated across-fold containers
+            if phase_name == 'validation':
+                agg_validation_all[f'fold_{fold}'] = all_patients_metrics
+            else:
+                agg_test_all[f'fold_{fold}'] = all_patients_metrics
+  
 # %%
 
-def extract_metric(metrics_dict, key:str):
-    ids, values = [], []
-    for pid, pdata in metrics_dict.items():
-        if "metrics" in pdata and key in pdata["metrics"]:
-            ids.append(pid)
-            values.append(pdata["metrics"][key])
-    return np.array(ids), np.array(values)
+try:
+    val_agg_path = os.path.join("inference_output_last", "figures", "validation", 'all_patients_metrics_aggregated.json')
+    os.makedirs(os.path.dirname(val_agg_path), exist_ok=True)
+    with open(val_agg_path, 'w') as f:
+        json.dump(numpy_to_list(agg_validation_all), f, indent=4)
+except Exception as e:
+    print(f"Warning: failed to save aggregated validation JSON: {e}")
 
-if dataloader == val_dataloader:
-    save_path = os.path.join("inference_output_last", "figures", "all_patients_metrics_mc.json" if use_mc else "all_patients_metrics.json")
-
-    with open(save_path, 'w') as f:
-        json.dump(numpy_to_list(all_patients_metrics), f, indent=4)
-
-    cube_sizes = np.concatenate([np.arange(1, 20), np.arange(20, 55, 5)])
-
-    detections = []
-    max_detections = []
-    for pid, pdata in all_patients_metrics.items():
-        det = pdata["metrics"]["patient_detection"]
-        max_det = pdata["metrics"]["patient_max_detection"]
-        detections.append(det)
-        max_detections.append(max_det)
-
-    detections = np.vstack(detections)
-    max_detections = np.vstack(max_detections)
-
-    success_rate = detections.mean(axis=0)
-    max_success_rate = max_detections.mean(axis=0)
-
-    plt.figure(figsize=(10, 6))
-    plt.plot(cube_sizes, success_rate, linestyle="-", label="Model Detection Success", color="blue")
-    plt.plot(cube_sizes, max_success_rate, linestyle="-", label="Maximum Possible Detection", color="green")
-    plt.xlabel("Cube Size (Voxels per Side)", fontsize=12)
-    plt.ylabel("Success Rate (Fraction of Patients)", fontsize=12)
-    plt.ylim(0, 1)
-    plt.xlim(1)  # Set x-axis lower limit to 1
-    plt.grid(True, linestyle="--", alpha=0.6)
-    plt.legend(fontsize=10)
-    plt.title("Patient Detection Success vs. Cube Size", fontsize=14, fontweight="bold")
-    plt.tight_layout()
-
-    save_dir = os.path.join("inference_output_last", "figures")
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, "patient_detection_success_vs_cube_size_mc.png" if use_mc else "patient_detection_success_vs_cube_size.png")
-    plt.savefig(save_path)
-    plt.show()
- 
-
-    tpr_values = [pdata["metrics"]["TPR"] for pid, pdata in all_patients_metrics.items()]
-    precision_values = [pdata["metrics"]["Precision"] for pid, pdata in all_patients_metrics.items()]
-
-    tpr_values = np.array(tpr_values)  # shape (n_patients,)
-    precision_values = np.array(precision_values)  # shape (n_patients,)
-
-    tpr_percent = tpr_values * 100  
-    precision_percent = precision_values * 100  
-
-    thresholds = np.linspace(0, 100, 201)
-    tpr_success_fraction = [(tpr_percent >= th).mean() for th in thresholds]
-    precision_success_fraction = [(precision_percent >= th).mean() for th in thresholds]
-
-    plt.figure(figsize=(10, 6))
-    plt.plot(thresholds, tpr_success_fraction, linestyle="-", color="blue", label="TPR")
-    plt.plot(thresholds, precision_success_fraction, linestyle="-", color="red", label="Precision")
-    plt.xlabel("Threshold (%)", fontsize=12)
-    plt.ylabel("Fraction of Patients ≥ Threshold", fontsize=12)
-    plt.ylim(0, 1)
-    plt.xlim(0, 100)
-    plt.grid(True, linestyle="--", alpha=0.6)
-    plt.legend(fontsize=10)
-    plt.title("Fraction of Patients vs. Threshold (TPR and Precision)", fontsize=14, fontweight="bold")
-    plt.tight_layout()
-
-    save_path = os.path.join("inference_output_last", "figures", "tpr_prec_thresholds_mc.png" if use_mc else "tpr_prec_thresholds.png")
-    plt.savefig(save_path)
-    plt.show()
-
-    # TODO make the code less redundant
-
-    compare = False
-    if compare:
-        load_path = os.path.join("inference_output_last", "figures", "all_patients_metrics.json")
-        load_path_mc = os.path.join("inference_output_last", "figures", "all_patients_metrics_mc.json") 
-        with open(load_path, 'r') as f:
-            all_patients_metrics = json.load(f)
-        with open(load_path_mc, 'r') as f:
-            all_patients_metrics_mc = json.load(f)
-        all_patients_metrics = list_to_numpy(all_patients_metrics)
-        all_patients_metrics_mc = list_to_numpy(all_patients_metrics_mc)
-
-        detections = []
-        max_detections = []
-        for pid, pdata in all_patients_metrics.items():
-            det = pdata["metrics"]["patient_detection"]
-            max_det = pdata["metrics"]["patient_max_detection"]
-            detections.append(det)
-            max_detections.append(max_det)
-        detections = np.vstack(detections)
-        max_detections = np.vstack(max_detections)
-        detections_mc = []
-        max_detections_mc = []
-        for pid, pdata in all_patients_metrics_mc.items():
-            det = pdata["metrics"]["patient_detection"]
-            max_det = pdata["metrics"]["patient_max_detection"]
-            detections_mc.append(det)
-            max_detections_mc.append(max_det)
-        detections_mc = np.vstack(detections_mc)
-        max_detections_mc = np.vstack(max_detections_mc)
-        success_rate = detections.mean(axis=0)
-        success_rate_mc = detections_mc.mean(axis=0)
-        max_success_rate = max_detections.mean(axis=0)
-        max_success_rate_mc = max_detections_mc.mean(axis=0)
-        plt.figure(figsize=(10, 6))
-        plt.plot(cube_sizes, success_rate, linestyle="-", label="Model Detection Success (No MC)", color="blue")
-        plt.plot(cube_sizes, success_rate_mc, linestyle="--", label="Model Detection Success (MC)", color="blue")
-        plt.plot(cube_sizes, max_success_rate, linestyle="-", label="Maximum Possible Detection", color="green")
-        plt.xlabel("Cube Size (Voxels per Side)", fontsize=12)
-        plt.ylabel("Success Rate (Fraction of Patients)", fontsize=12)
-        plt.ylim(0, 1)
-        plt.xlim(1)
-        plt.grid(True, linestyle="--", alpha=0.6)
-        plt.legend(fontsize=10)
-        plt.title("Patient Detection Success vs. Cube Size (MC vs No MC)", fontsize=14, fontweight="bold")
-        plt.tight_layout()
-        save_path = os.path.join("inference_output_last", "figures", "patient_detection_success_vs_cube_size_mc_vs_no_mc.png")
-        plt.savefig(save_path)
-        plt.show()
-
-        # tpr and precision 
-        tpr_values = [pdata["metrics"]["TPR"] for pid, pdata in all_patients_metrics.items()]
-        precision_values = [pdata["metrics"]["Precision"] for pid, pdata in all_patients_metrics.items()]
-        tpr_values_mc = [pdata["metrics"]["TPR"] for pid, pdata in all_patients_metrics_mc.items()]
-        precision_values_mc = [pdata["metrics"]["Precision"] for pid, pdata in all_patients_metrics_mc.items()]
-        tpr_values = np.array(tpr_values)
-        precision_values = np.array(precision_values)
-        tpr_values_mc = np.array(tpr_values_mc)
-        precision_values_mc = np.array(precision_values_mc)
-        tpr_percent = tpr_values * 100
-        precision_percent = precision_values * 100
-        tpr_percent_mc = tpr_values_mc * 100
-        precision_percent_mc = precision_values_mc * 100
-        thresholds = np.linspace(0, 100, 201)
-        tpr_success_fraction = [(tpr_percent >= th).mean() for th in thresholds]
-        precision_success_fraction = [(precision_percent >= th).mean() for th in thresholds]
-        tpr_success_fraction_mc = [(tpr_percent_mc >= th).mean() for th in thresholds]
-        precision_success_fraction_mc = [(precision_percent_mc >= th).mean() for th in thresholds]
-        plt.figure(figsize=(10, 6))
-        plt.plot(thresholds, tpr_success_fraction, linestyle="-", color="blue", label="TPR (No MC)")
-        plt.plot(thresholds, precision_success_fraction, linestyle="-", color="red", label="Precision (No MC)")
-        plt.plot(thresholds, tpr_success_fraction_mc, linestyle="--", color="blue", label="TPR (MC)")
-        plt.plot(thresholds, precision_success_fraction_mc, linestyle="--", color="red", label="Precision (MC)")
-        plt.xlabel("Threshold (%)", fontsize=12)
-        plt.ylabel("Fraction of Patients ≥ Threshold", fontsize=12)
-        plt.ylim(0, 1)
-        plt.xlim(0, 100)
-        plt.grid(True, linestyle="--", alpha=0.6)
-        plt.legend(fontsize=10)
-        plt.title("Fraction of Patients vs. Threshold (TPR and Precision, MC vs No MC)", fontsize=14, fontweight="bold")
-        plt.tight_layout()
-        save_path = os.path.join("inference_output_last", "figures", "tpr_prec_thresholds_mc_vs_no_mc.png")
-        plt.savefig(save_path)
-        plt.show()
-
-
-
-## FPR plot MC vs no-MC
-        ids1, fpr1 = extract_metric(all_patients_metrics, key="FPR")
-        ids2, fpr2 = extract_metric(all_patients_metrics_mc, key="FPR")
-
-        max_fpr = max(fpr1.max(), fpr2.max())
-        fpr1_norm = fpr1 / max_fpr
-        fpr2_norm = fpr2 / max_fpr
-
-        x_vals = np.arange(0, 1.01, 0.01)
-        sf1 = [(fpr1_norm >= x).mean() for x in x_vals]
-        sf2 = [(fpr2_norm >= x).mean() for x in x_vals]
-
-        plt.style.use("seaborn-v0_8-whitegrid")
-        plt.figure(figsize=(8, 6))
-        plt.plot(x_vals, sf1, label="Baseline Model", lw=2.5, marker="o", markevery=10)
-        plt.plot(x_vals, sf2, label="MC Model", lw=2.5, marker="s", markevery=10)
-
-        plt.xlabel("Normalized FPR Threshold", fontsize=12)
-        plt.ylabel("Fraction of Patients (≥ FPR)", fontsize=12)
-        plt.title("Fraction of Patients with FPR ≥ Threshold", fontsize=14, pad=15)
-        plt.legend(fontsize=11)
-        plt.grid(alpha=0.4, linestyle="--")
-        plt.tight_layout()
-        save_path = os.path.join("inference_output_last", "figures", "fpr_function_mc_vs_no_mc.png")
-        plt.savefig(save_path, dpi=300)
-        plt.close()
-
-## 
-
-
-elif dataloader == test_dataloader:
-    save_path = os.path.join("inference_output_last", "figures", "test", f"fold_{fold}", "all_patients_metrics_mc.json" if use_mc else "all_patients_metrics.json")
-    
-    with open(save_path, 'w') as f:
-        json.dump(numpy_to_list(all_patients_metrics), f, indent=4)
-# %%
+try:
+    test_agg_path = os.path.join("inference_output_last", "figures", "test", 'all_patients_metrics_aggregated.json')
+    os.makedirs(os.path.dirname(test_agg_path), exist_ok=True)
+    with open(test_agg_path, 'w') as f:
+        json.dump(numpy_to_list(agg_test_all), f, indent=4)
+except Exception as e:
+    print(f"Warning: failed to save aggregated test JSON: {e}")
