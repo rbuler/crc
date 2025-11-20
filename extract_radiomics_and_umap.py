@@ -204,11 +204,6 @@ def main():
     n_procs = max(1, os.cpu_count() - 1)
     out_csv = 'radiomics_umap_output'
 
-    
-    # if os.path.exists('extraction_jobs.pkl') and os.path.exists('extraction_missing.pkl'):
-    #     jobs = joblib.load('extraction_jobs.pkl')
-    #     missing = joblib.load('extraction_missing.pkl')
-    # else:
     j_val, missing_val = collect_jobs_from_validation(val_dir)
     j_test, missing_test = collect_jobs_from_test(test_root, folds)
     jobs = j_val + j_test
