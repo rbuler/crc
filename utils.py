@@ -438,6 +438,9 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thres
     elif logits_input is False:
         pred_probs = pred
     
+    pred_probs = pred_probs.detach().detach().cpu()
+    true_mask = true_mask.detach().detach().cpu()
+    
     pred_labels = torch.argmax(pred_probs, dim=1) if num_classes > 1 else (pred_probs > prob_thresh).long()
 
     dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
@@ -473,14 +476,16 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thres
         pred_np = valid_pred_labels.cpu().numpy().astype(np.bool_)
         true_np = valid_true_masks.cpu().numpy().astype(np.bool_)
         
+        epoch = 0 # temp
+        epoch = None # temp
         if epoch is not None and epoch < 20:
                 hd95_score = 0.0
                 assd_score = 0.0
                 patient_detection = {
-                    "intersection": np.zeros(20),
-                    "gt": np.zeros(20),
+                    "intersection": np.zeros(26),
+                    "gt": np.zeros(26),
                 }
-                cube_sizes = np.zeros(20)
+                cube_sizes = np.zeros(26)
         else:
 
             hd95_scores = []
@@ -507,8 +512,6 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thres
 
             hd95_score = np.nanmean(hd95_scores)
             assd_score = np.nanmean(assd_scores)
-
-
 
         
             cube_sizes = np.concatenate([np.arange(1, 20), np.arange(20, 55, 5)])
@@ -560,15 +563,48 @@ def evaluate_segmentation(pred, true_mask, epoch=None, num_classes=1, prob_thres
         }
 
     else:
-        
+        # No positive ground-truth voxels in this batch (healthy patients).
+        # Compute false-positive summary metrics and also compute, for a
+        # range of cube sizes, whether a cube of that size can fit fully inside
+        # any predicted positive region for each patient. This allows plotting
+        # the fraction of (healthy) patients that have false-positive clusters
+        # large enough to contain a cube of given side length.
         fp_metrics = compute_false_positive_metrics(pred_labels, voxel_spacing=target_spacing)
+
+        # Build cube-size detection arrays across the batch
+        cube_sizes = np.concatenate([np.arange(1, 20), np.arange(20, 55, 5)])
+        patient_detection_pred = []
+        patient_detection_gt = []  # for consistency with other code; will be zeros for healthy
+
+        # pred_labels shape B x H x W x D (or B x C x H x W x D). Normalize to B x H x W x D
+        pred_np = pred_labels.cpu().numpy()
+        if pred_np.ndim == 5:  # B C H W D
+            pred_np = pred_np[:, 0]
+
+        # For each cube size, compute fraction of patients where cube fits fully inside the prediction
+        for cube_size in cube_sizes:
+            fits_count = 0
+            fits_gt_count = 0
+            for i in range(pred_np.shape[0]):
+                pred_i = pred_np[i].astype(np.uint8)
+                # reuse cube_fits_in_intersection by passing pred twice to test fit in prediction
+                fits_in_pred, fits_in_gt = cube_fits_in_intersection(pred_i, pred_i, cube_size)
+                fits_count += int(fits_in_pred)
+                fits_gt_count += int(fits_in_gt)
+            patient_detection_pred.append(fits_count / max(1, pred_np.shape[0]))
+            patient_detection_gt.append(fits_gt_count / max(1, pred_np.shape[0]))
+
         return {
             "Dice": 0.,
             "IoU": 0.,
             "HD95": 0.,
             "ASSD": 0.,
-            "FPR": 0.,
-            "TPR": 0.,
-            "Precision": 0.,
-            **fp_metrics
+            **fp_metrics,
+            "patient_detection": np.array(patient_detection_pred),
+            "patient_max_detection": np.array(patient_detection_gt),
+            "cube_max_size": (
+                cube_sizes[np.max(np.where(np.array(patient_detection_pred) == 1))]
+                if np.any(np.array(patient_detection_pred) == 1)
+                else 0
+            )
         }
