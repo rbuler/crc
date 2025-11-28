@@ -4,6 +4,8 @@ import copy
 import time
 import uuid
 import torch
+from monai.losses import DiceCELoss
+criterion_val = DiceCELoss(sigmoid=True, squared_pred=True)
 
 def train_net(mode, root, model, criterion, optimizer, schedulers, dataloaders, num_epochs=100, patience=10, device='cpu', run=None, inferer=None, num_classes=1):
     train_dataloader = dataloaders[0]
@@ -47,6 +49,9 @@ def train_net(mode, root, model, criterion, optimizer, schedulers, dataloaders, 
                 totals[key] += value
             loss.backward()
             optimizer.step()
+            
+            del logits, inputs, targets, loss
+            torch.cuda.empty_cache()
 
         avg_loss = total_loss / num_batches
         averages = {key: total / num_batches for key, total in totals.items() if 'patient' not in key}
@@ -82,7 +87,7 @@ def train_net(mode, root, model, criterion, optimizer, schedulers, dataloaders, 
                     logits[body_mask == 0] = -1e10
                 metrics = evaluate_segmentation(logits, targets, epoch)
                 targets = targets.float()
-                loss = criterion(logits, targets)
+                loss = criterion_val(logits, targets)
                 val_loss += loss.detach().item()
                 if val_totals is None:
                     val_totals = {key: 0. for key in metrics.keys()}
@@ -95,7 +100,8 @@ def train_net(mode, root, model, criterion, optimizer, schedulers, dataloaders, 
                     "TPR": metrics["TPR"],
                     "Precision": metrics["Precision"],
                 }
-        
+                del logits, inputs, targets, loss
+                torch.cuda.empty_cache()
 
         avg_val_loss = val_loss / num_val_batches
         val_averages = {key: total / num_val_batches for key, total in val_totals.items() if 'patient' not in key}
