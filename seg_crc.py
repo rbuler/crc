@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedKFold
 
 import monai.transforms as mt
-from monai.losses import TverskyLoss, FocalLoss, DiceCELoss, DiceFocalLoss, DiceLoss
+from monai.losses import TverskyLoss, FocalLoss, DiceCELoss, DiceFocalLoss, DiceLoss, HausdorffDTLoss
 from monai.inferers import SlidingWindowInferer
 from unetr_pp.network_architecture.synapse.unetr_pp_synapse import UNETR_PP
 from monai.networks.nets import UNet
@@ -58,6 +58,7 @@ if pos_weight == 'None':
 loss_fn = config['training']['loss_fn']
 mode = config['training']['mode']
 patch_mode = config['training']['patch_mode']
+num_patches = config['training']['num_patches']
 
 if config['neptune']:
     run = neptune.init_run(project="ProjektMMG/CRC")
@@ -130,14 +131,14 @@ class LossFn:
         def __init__(self, gamma=1.0):
             super().__init__()
             self.dicece = DiceCELoss(sigmoid=True, squared_pred=True)
-            self.focal_loss = FocalLoss(gamma=gamma, alpha=0.99)
+            self.hausdorff = HausdorffDTLoss(alpha=2.0, sigmoid=True, include_background=False)
 
         def forward(self, logits, targets):
 
             dicece = self.dicece(logits, targets)
-            focal = self.focal_loss(logits, targets)
+            hausdorff = self.hausdorff(logits, targets)
 
-            return (dicece + focal)
+            return (dicece + 0.5 * hausdorff)
 
 
 def get_optimizer(optimizer_name, model_params, lr, weight_decay):
@@ -235,7 +236,7 @@ dataset_u = CRCDataset_seg(root_dir=root,
                            transforms=transforms,
                            patch_size=patch_size,
                            stride=stride,
-                           num_patches_per_sample=100,
+                           num_patches=num_patches,
                            mode=mode,
                            patch_mode=patch_mode)
 dataset_h = CRCDataset_seg(root_dir=root,
@@ -244,7 +245,7 @@ dataset_h = CRCDataset_seg(root_dir=root,
                            transforms=transforms,
                            patch_size=patch_size,
                            stride=stride,
-                           num_patches_per_sample=100,
+                           num_patches=num_patches,
                            mode=mode,
                            patch_mode=patch_mode)
 # %%
@@ -355,7 +356,6 @@ loss_factory = LossFn(loss_fn=loss_fn, alpha=alpha, beta=beta, weight=pos_weight
 criterion = loss_factory.get_loss()
 optimizer = get_optimizer(optimizer, model.parameters(), lr, weight_decay)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10, min_lr=1e-6)
-# scheduler = None
 
 warmup_epochs = 5
 def warmup_lambda(epoch):
@@ -368,6 +368,7 @@ warmup_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup_lambd
 schedulers = {"warmup": warmup_scheduler,
     "plateau": scheduler,
     "warmup_epochs": warmup_epochs}
+schedulers = None
 
 if run:
     run["train/model"] = model.__class__.__name__
