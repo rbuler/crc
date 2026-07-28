@@ -22,7 +22,8 @@ class CRCDataset_seg(Dataset):
                  stride: int = 32,
                  num_patches: int = 50,
                  mode = '3d',
-                 patch_mode='dict_transform'):  
+                 patch_mode='dict_transform',
+                 return_raw_image: bool = False):  
                          
         self.root = root_dir
         self.df = df
@@ -33,6 +34,7 @@ class CRCDataset_seg(Dataset):
         self.mode = mode
         self.train_mode = False
         self.patch_mode = patch_mode
+        self.return_raw_image = return_raw_image
 
         self.images_path = []
         self.images_path = df['images_path'].values
@@ -72,6 +74,8 @@ class CRCDataset_seg(Dataset):
         mask = resample_tensor(mask, image_spacing, target_spacing, is_label=True)
         body_mask = resample_tensor(body_mask, image_spacing, target_spacing, is_label=True)
 
+        raw_image = image.clone() if self.return_raw_image else None
+
         window_center = 45
         window_width = 400
         image = self.window_and_normalize_ct(image,
@@ -91,6 +95,8 @@ class CRCDataset_seg(Dataset):
         image = image.permute(2, 0, 1)   # D, H, W
         mask = mask.permute(2, 0, 1)
         body_mask = body_mask.permute(2, 0, 1)
+        if raw_image is not None:
+            raw_image = raw_image.permute(2, 0, 1)
 
         if self.mode == '3d':
 
@@ -157,8 +163,15 @@ class CRCDataset_seg(Dataset):
             else:
                 mask = {"mask": mask, "body_mask": body_mask}
                 if self.transforms is not None:
-                    transformed = self.transforms[1]({"image": image, "mask": mask})
+                    data_to_transform = {"image": image, "mask": mask}
+                    if raw_image is not None:
+                        data_to_transform["raw_image"] = raw_image
+                    transformed = self.transforms[1](data_to_transform)
                     image, mask = transformed["image"], transformed["mask"]
+                    if raw_image is not None:
+                        raw_image = transformed["raw_image"]
+                if raw_image is not None:
+                    return torch.zeros(1), torch.zeros(1), image, mask, id, raw_image
                 return torch.zeros(1), torch.zeros(1), image, mask, id
         
         elif self.mode == '2d':
@@ -194,9 +207,15 @@ class CRCDataset_seg(Dataset):
 
             elif (self.transforms is not None) and not self.train_mode:
                 data_to_transform = {"image": image, "mask": mask}
+                if self.return_raw_image and raw_image is not None:
+                    data_to_transform["raw_image"] = raw_image
                 transformed = self.transforms[1](data_to_transform)  # val_transforms
                 image, mask = transformed["image"], transformed["mask"]
+                if self.return_raw_image and raw_image is not None:
+                    raw_image = transformed["raw_image"]
 
+            if self.return_raw_image and raw_image is not None:
+                return torch.zeros(1), torch.zeros(1), image, mask, id, raw_image
             return torch.zeros(1), torch.zeros(1), image, mask, id
 
 
