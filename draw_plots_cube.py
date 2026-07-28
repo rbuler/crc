@@ -504,7 +504,7 @@ if results:
     plt.plot([0, 1], [0, 1], color='k', linestyle='--', lw=1)
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title('ROC across cube-size cutoffs (per threshold) — mean across folds')
+    plt.title('ROC across cube-size cutoffs — mean across folds')
     plt.legend(loc='lower right', fontsize=8)
     plt.grid(True, linestyle='--', alpha=0.4)
     plt.tight_layout()
@@ -530,7 +530,7 @@ if results:
 
     plt.xlabel('Cube Size (Voxels per Side)')
     plt.ylabel('Metric (mean across folds)')
-    plt.title('Sensitivity (solid) and Specificity (dashed) — Means Across Folds (per threshold)')
+    plt.title('Sensitivity (solid) and Specificity (dashed) — Means Across Folds')
     plt.xlim(0, x_lim)
     plt.ylim(0, 1)
     plt.grid(True, linestyle='--', alpha=0.4)
@@ -588,6 +588,156 @@ if results:
     except Exception as e:
         print('Warning: failed to build/write sensitivity wide table:', e)
 
+    # ----------------- Interactive plots (HTML) using plotly -----------------
+    try:
+        import plotly.graph_objects as go
+        import plotly.express as px
+    except Exception:
+        print('Plotly not available. Install with `pip install plotly` to get interactive HTML plots.')
+        df_spec_wide = locals().get('df_spec_wide')
+        df_sens_wide = locals().get('df_sens_wide')
+    else:
+        # interactive ROC: stair-like (step) curves per threshold
+        try:
+            roc_fig = go.Figure()
+            for th, res in sorted(results.items()):
+                x = np.asarray(res['fpr'])
+                y = np.asarray(res['tpr'])
+                roc_fig.add_trace(go.Scatter(x=x, y=y, mode='lines+markers', name=f"{th} (AUC={res['auc']:.3f})",
+                                             line=dict(shape='hv'),
+                                             hovertemplate='FPR: %{x:.3f}<br>TPR: %{y:.3f}<br>Threshold: ' + th))
+            # add diagonal chance line
+            roc_fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode='lines', name='Chance',
+                                         line=dict(dash='dash', color='navy')))
+            roc_fig.update_layout(title='Interactive ROC (step) — mean across folds', xaxis_title='FPR', yaxis_title='TPR',
+                                  width=700, height=700)
+            roc_html = os.path.join(out_dir, 'interactive_roc.html')
+            roc_fig.write_html(roc_html)
+            print('Wrote interactive ROC to', roc_html)
+        except Exception as e:
+            print('Warning: failed to build interactive ROC:', e)
+
+        # interactive sensitivity/specificity overlay per threshold
+        try:
+            ss_fig = go.Figure()
+            for i, (th, res) in enumerate(sorted(results.items())):
+                cs = np.asarray(res['cube_sizes'])
+                sens = np.asarray(res['sens_mean'])
+                spec = np.asarray(res['spec_mean'])
+                # sensitivity (solid)
+                ss_fig.add_trace(go.Scatter(x=cs, y=sens, mode='lines+markers', name=f'{th} sens',
+                                            line=dict(dash='solid'), marker=dict(size=4)))
+                # specificity (dashed)
+                ss_fig.add_trace(go.Scatter(x=cs, y=spec, mode='lines+markers', name=f'{th} spec',
+                                            line=dict(dash='dash'), marker=dict(size=4)))
+            ss_fig.update_layout(title='Interactive Sensitivity (solid) and Specificity (dashed)',
+                                 xaxis_title='Cube Size', yaxis_title='Metric (mean across folds)', width=1100, height=600)
+            ss_html = os.path.join(out_dir, 'interactive_sens_spec.html')
+            ss_fig.write_html(ss_html)
+            print('Wrote interactive sensitivity/specificity plot to', ss_html)
+        except Exception as e:
+            print('Warning: failed to build interactive sens/spec plot:', e)
+
 
 # %%
 
+# here plot sensitivity/specificity
+# BUT THIS TIME REMOVE ALL PATIENTS from VALIDATION SET WITH NO CUBE DETECTION AT ALL and only for threshold 0.95
+# all_data['cube_detection'] contains JSON strings {"th0.01": [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "th0.05": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "th0.10": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "th0.20": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "th0.30": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "th0.40": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "th0.50": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "th0.60": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "th0.70": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "th0.80": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "th0.90": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "th0.95": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}
+
+df_filtered = all_data.copy()
+def has_detection_at_threshold(row, threshold='th0.95'):
+    parsed = _parse_cube_detection(row.get('cube_detection'))
+    arr = parsed.get(threshold, [])
+    return any(v for v in arr)
+df_filtered = df_filtered[~((df_filtered['dataset'].astype(str) == 'validation') & (~df_filtered.apply(has_detection_at_threshold, axis=1)))]
+results_filtered = summarize_by_threshold_mean_across_folds(df_filtered, cube_sizes)
+
+# plot sensitivity/specificity again
+plt.figure(figsize=(11, 6))
+for i, (th, res) in enumerate(sorted(results_filtered.items())):
+    cs = np.asarray(res['cube_sizes'])
+    sens = np.asarray(res['sens_mean'])
+    spec = np.asarray(res['spec_mean'])
+    color = plt.get_cmap('tab10')(i % 10)
+    # sensitivity: solid line
+    plt.plot(cs, sens, color=color, linestyle='-', lw=1.8, label=f'{th} sens')
+    # specificity: dashed line
+    plt.plot(cs, spec, color=color, linestyle='--', lw=1.4, label=f'{th} spec')
+plt.xlabel('Cube Size (Voxels per Side)')
+plt.ylabel('Metric (mean across folds)')
+plt.title('Sensitivity (solid) and Specificity (dashed) — Means Across Folds - Filtered')
+plt.xlim(0, x_lim)
+plt.ylim(0, 1)
+plt.grid(True, linestyle='--', alpha=0.4)
+# make legend compact
+plt.legend(loc='upper right', fontsize=8, ncol=2)
+plt.tight_layout()
+plt.show()
+
+# roc curve again
+plt.figure(figsize=(7, 7))
+for th, res in results_filtered.items():
+    plt.step(res['fpr'], res['tpr'], where='post', lw=2, label=f"{th} (AUC={res['auc']:.3f})")
+plt.plot([0, 1], [0, 1], color='k', linestyle='--', lw=1)
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC across cube sizes (Filtered)')
+plt.legend(loc='lower right', fontsize=8)
+plt.grid(True, linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+
+
+
+# html interactive plots again
+try:
+    import plotly.graph_objects as go
+except Exception:
+    print('Plotly not available. Install with `pip install plotly` to get interactive HTML plots.')
+else:   
+    # interactive ROC: stair-like (step) curves per threshold
+    try:
+        roc_fig = go.Figure()
+        for th, res in sorted(results_filtered.items()):
+            x = np.asarray(res['fpr'])
+            y = np.asarray(res['tpr'])
+            roc_fig.add_trace(go.Scatter(x=x, y=y, mode='lines+markers', name=f"{th} (AUC={res['auc']:.3f})",
+                                         line=dict(shape='hv'),
+                                         hovertemplate='FPR: %{x:.3f}<br>TPR: %{y:.3f}<br>Threshold: ' + th))
+        # add diagonal chance line
+        roc_fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode='lines', name='Chance',
+                                     line=dict(dash='dash', color='navy')))
+        roc_fig.update_layout(title='Interactive ROC (step) — Filtered', xaxis_title='FPR', yaxis_title='TPR',
+                              width=700, height=700)
+        roc_html = os.path.join(out_dir, 'interactive_roc_filtered.html')
+        roc_fig.write_html(roc_html)
+        print('Wrote interactive ROC to', roc_html)
+    except Exception as e:
+        print('Warning: failed to build interactive ROC:', e)
+
+
+# sensitivity/specificity html plot
+
+    try:
+        ss_fig = go.Figure()
+        for i, (th, res) in enumerate(sorted(results_filtered.items())):
+            cs = np.asarray(res['cube_sizes'])
+            sens = np.asarray(res['sens_mean'])
+            spec = np.asarray(res['spec_mean'])
+            # sensitivity (solid)
+            ss_fig.add_trace(go.Scatter(x=cs, y=sens, mode='lines+markers', name=f'{th} sens',
+                                        line=dict(dash='solid'), marker=dict(size=4)))
+            # specificity (dashed)
+            ss_fig.add_trace(go.Scatter(x=cs, y=spec, mode='lines+markers', name=f'{th} spec',
+                                        line=dict(dash='dash'), marker=dict(size=4)))
+        ss_fig.update_layout(title='Interactive Sensitivity (solid) and Specificity (dashed) — Filtered',
+                             xaxis_title='Cube Size', yaxis_title='Metric (mean across folds)', width=1100, height=600)
+        ss_html = os.path.join(out_dir, 'interactive_sens_spec_filtered.html')
+        ss_fig.write_html(ss_html)
+        print('Wrote interactive sensitivity/specificity plot to', ss_html)
+    except Exception as e:
+        print('Warning: failed to build interactive sens/spec plot:', e)
+
+
+# %%
