@@ -207,7 +207,6 @@ def extract_T(value):
     m = re.match(r"^(T\d)", s, flags=re.IGNORECASE)
     if m:
         return m.group(1)
-    print(f"Warning: Could not extract T from value '{value}'")
     return None
 
 clinical_data_dir = os.path.join(root, config['dir']['clinical_data'])
