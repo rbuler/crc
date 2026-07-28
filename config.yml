@@ -1,39 +1,41 @@
 seed: 42
 fold: 1
-device: 'cuda:0'
-neptune: False
+device: 'cuda'
+neptune: True
 
 training:
-  mode: '3d'  # '2d' or '3d'
   num_classes: 1
-  patch_size: '[64, 128, 128]' #'[32, 128, 128]'
-  stride: 32
+  num_workers: 8
+  epochs: 750
+  patience: 600
   batch_size: 1
-  num_workers: 0
-  epochs: 2
-  patience: 100
   lr: 0.0001
-  wd: 0.001
+  wd: 0.0001
   optimizer: 'adam' # 'sgd'
-  loss_alpha: 1.
-  loss_beta:  50.
+  loss_alpha: .3
+  loss_beta:  .7
   pos_weight: None
-  loss_fn: "dicece"
+  loss_fn: "hybrid_v2"  # "hybrid"  "hybrid_v2"  "dicece"  "dicefocal"  "tversky_focal"  "dice"  "focal"  "tversky"  "hausdorff"
+  num_patches: 18
+  patch_mode: "dict_transform"         ## "loop_transform"   "dict_transform"   "compose_crop"
 
+  mode: '3d'  # '2d' or '3d'
+  patch_size: '[64, 128, 128]'   # '[384, 384]' #'[64, 128, 128]'
+  stride: 32
 
 dir:
-  root: '/media/dysk_a/jr_buler/RJG-gumed/'
+  root: '/users/project1/pt01191/CRC/Data/'
   nii_images: 'data_unprocessed/unhealthy'
   nii_healthy: 'data_unprocessed/healthy'
   dcm_healthy: 'Zdrowe ludzie'
   dcm_images: 'RJG_13-02-25_dicom'
-  clinical_data: 'crc_data_13-02-25.csv'
+  clinical_data: 'crc_data_5-25.xlsx'
   inf: 'radiomics_info.pkl'
   pkl_radiomics: 'radiomics_features.pkl'
   processed_images_u: 'data_processed/unhealthy'
   processed_images_h: 'data_processed/healthy'
   processed: 'data_processed/'
-
+  
   
 radiomics:  
   action: 'load' # 'extract' to extract radiomics, 'load' to load from pkl
